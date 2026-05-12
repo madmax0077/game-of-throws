@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 255 255 255;
+    --foreground: 15 16 36;
+  }
+
+  html,
+  body {
+    @apply bg-white text-ink-900 antialiased;
+    font-feature-settings: "cv11", "ss01", "ss02";
+  }
+
+  ::selection {
+    @apply bg-brand-700 text-white;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+           text-sm font-semibold transition-all
+           focus:outline-none focus:ring-2 focus:ring-brand-700/40
+           disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-brand-700 text-white hover:bg-brand-800 shadow-glow;
+  }
+  .btn-secondary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-800;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-900 hover:bg-ink-100;
+  }
+  .btn-outline {
+    @apply btn border border-ink-200 bg-white text-ink-900 hover:bg-ink-50;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-ink-200 bg-white px-3.5 py-2.5
+           text-sm text-ink-900 placeholder:text-ink-400
+           focus:outline-none focus:ring-2 focus:ring-brand-700/40 focus:border-brand-700;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-ink-800 mb-1.5;
+  }
+
+  .card {
+    @apply rounded-2xl border border-ink-100 bg-white shadow-card;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-live {
+    @apply badge bg-brand-50 text-brand-700;
+  }
+  .badge-live::before {
+    content: "";
+    @apply h-1.5 w-1.5 rounded-full bg-brand-700 animate-pulse;
+  }
+  .badge-upcoming {
+    @apply badge bg-ink-100 text-ink-700;
+  }
+  .badge-completed {
+    @apply badge bg-emerald-50 text-emerald-700;
+  }
+}
