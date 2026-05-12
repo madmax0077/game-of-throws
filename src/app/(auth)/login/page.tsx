@@ -36,19 +36,16 @@ export default function LoginPage() {
         Sign in to score live, manage tournaments or follow your team.
       </p>
 
-      {/* Continue-with-Google placeholder. Wired up but disabled until
-          GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET are set on Vercel. */}
+      {/* Google sign-in: enabled when GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
+          are configured on the server. New Google users are created as
+          PLAYER accounts; existing users keep their current role. */}
       <button
         type="button"
-        disabled
-        title="Coming soon: ask the admin to add Google OAuth credentials in Vercel."
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-700 opacity-60"
+        onClick={() => signIn("google", { callbackUrl })}
+        className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-700 transition hover:border-brand-200 hover:bg-brand-50/30"
       >
         <GoogleIcon />
         Continue with Google
-        <span className="ml-1 rounded-full bg-ink-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-500">
-          Coming soon
-        </span>
       </button>
 
       <div className="my-5 flex items-center gap-3 text-xs text-ink-400">

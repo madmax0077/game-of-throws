@@ -1,0 +1,13 @@
+Enable 'Continue with Google' for players
+
+- Register GoogleProvider conditionally when GOOGLE_CLIENT_ID +
+  GOOGLE_CLIENT_SECRET env vars are present (no impact when missing)
+- On first Google sign-in, jwt callback auto-creates a User row with
+  role=PLAYER and a matching Player profile linked by email; uses a
+  random unguessable passwordHash so the Credentials provider can
+  never sign Google-only users in by password
+- Existing users keep their role on Google sign-in (organizer stays
+  organizer); avatar URL is backfilled from Google profile picture
+- Forces 'select_account' prompt so users can switch Google identities
+- /login and /signup/player Google buttons are now live (no longer
+  'Coming soon'); player signup routes to /me?welcome=1 after sign-in
