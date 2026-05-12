@@ -9,7 +9,6 @@ export type AvailablePlayer = {
   role: string;
   battingHand: string;
   bowlingArm: string | null;
-  jerseyNo: number | null;
   avatarUrl: string | null;
 };
 

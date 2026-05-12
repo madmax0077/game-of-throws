@@ -14,7 +14,6 @@ export type JoinRequestItem = {
     role: string;
     battingHand: string;
     bowlingArm: string | null;
-    jerseyNo: number | null;
     avatarUrl: string | null;
   };
 };
@@ -97,9 +96,6 @@ function RequestRow({ request }: { request: JoinRequestItem }) {
           {request.player.battingHand === "LEFT" ? "LH" : "RH"} bat
           {request.player.bowlingArm
             ? ` • ${request.player.bowlingArm === "LEFT" ? "LH" : "RH"} bowl`
-            : ""}
-          {request.player.jerseyNo != null
-            ? ` • #${request.player.jerseyNo}`
             : ""}
         </p>
         {request.message && (

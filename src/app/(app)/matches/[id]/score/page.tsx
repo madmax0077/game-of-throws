@@ -12,8 +12,8 @@ export default async function ScorePage({
   const match = await prisma.match.findUnique({
     where: { id: params.id },
     include: {
-      homeTeam: { include: { players: { orderBy: [{ jerseyNo: "asc" }, { createdAt: "asc" }] } } },
-      awayTeam: { include: { players: { orderBy: [{ jerseyNo: "asc" }, { createdAt: "asc" }] } } },
+      homeTeam: { include: { players: { orderBy: { name: "asc" } } } },
+      awayTeam: { include: { players: { orderBy: { name: "asc" } } } },
       tournament: true,
       innings: {
         include: {

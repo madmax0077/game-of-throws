@@ -127,7 +127,6 @@ export default async function PlayersPage() {
               key={r.player.id}
               rank={i + 1}
               name={r.player.name}
-              jerseyNo={r.player.jerseyNo}
               role={r.player.role}
               teamName={r.player.team?.name ?? "Free agent"}
               runs={r.stats.runs}
@@ -145,7 +144,6 @@ export default async function PlayersPage() {
 function PlayerRankCard({
   rank,
   name,
-  jerseyNo,
   role,
   teamName,
   runs,
@@ -155,7 +153,6 @@ function PlayerRankCard({
 }: {
   rank: number;
   name: string;
-  jerseyNo: number | null;
   role: string;
   teamName: string;
   runs: number;
@@ -181,8 +178,8 @@ function PlayerRankCard({
         {rank}
       </div>
 
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-bold">
-        {jerseyNo ?? "—"}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-bold text-white">
+        {name[0]?.toUpperCase() ?? "?"}
       </div>
 
       <div className="min-w-0 flex-1">

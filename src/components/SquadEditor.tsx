@@ -8,7 +8,6 @@ type Player = {
   name: string;
   role: string;
   battingHand: string;
-  jerseyNo: number | null;
 };
 
 const ROLE_OPTIONS = [
@@ -35,7 +34,6 @@ export function SquadEditor({
   const [name, setName] = useState("");
   const [role, setRole] = useState("BATTER");
   const [battingHand, setBattingHand] = useState("RIGHT");
-  const [jerseyNo, setJerseyNo] = useState<string>("");
 
   async function addPlayer(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +44,6 @@ export function SquadEditor({
       role,
       battingHand
     };
-    if (jerseyNo !== "") body.jerseyNo = Number(jerseyNo);
 
     const res = await fetch(`/api/teams/${teamId}/players`, {
       method: "POST",
@@ -60,7 +57,6 @@ export function SquadEditor({
       return;
     }
     setName("");
-    setJerseyNo("");
     setRole("BATTER");
     setBattingHand("RIGHT");
     router.refresh();
@@ -68,7 +64,7 @@ export function SquadEditor({
 
   async function savePlayer(
     id: string,
-    data: { name: string; role: string; battingHand: string; jerseyNo: number | null }
+    data: { name: string; role: string; battingHand: string }
   ) {
     setBusy(true);
     setError(null);
@@ -123,7 +119,7 @@ export function SquadEditor({
           onSubmit={addPlayer}
           className="rounded-xl border border-brand-200 bg-brand-50/40 p-4"
         >
-          <div className="grid gap-3 sm:grid-cols-[1.5fr_1fr_1fr_80px]">
+          <div className="grid gap-3 sm:grid-cols-[1.5fr_1fr_1fr]">
             <div>
               <label className="label" htmlFor="p-name">Player name</label>
               <input
@@ -162,19 +158,6 @@ export function SquadEditor({
                 <option value="RIGHT">Right-hand</option>
                 <option value="LEFT">Left-hand</option>
               </select>
-            </div>
-            <div>
-              <label className="label" htmlFor="p-no">Jersey #</label>
-              <input
-                id="p-no"
-                type="number"
-                min={0}
-                max={999}
-                value={jerseyNo}
-                onChange={(e) => setJerseyNo(e.target.value)}
-                className="input"
-                placeholder="—"
-              />
             </div>
           </div>
 
@@ -222,8 +205,8 @@ export function SquadEditor({
                 key={p.id}
                 className="flex items-center gap-4 p-3 hover:bg-ink-50/60"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-bold text-ink-700">
-                  {p.jerseyNo ?? "—"}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
+                  {p.name[0]?.toUpperCase() ?? "?"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="truncate text-sm font-semibold">{p.name}</p>
@@ -268,19 +251,15 @@ function EditRow({
     name: string;
     role: string;
     battingHand: string;
-    jerseyNo: number | null;
   }) => void;
 }) {
   const [name, setName] = useState(player.name);
   const [role, setRole] = useState(player.role);
   const [battingHand, setBattingHand] = useState(player.battingHand);
-  const [jerseyNo, setJerseyNo] = useState<string>(
-    player.jerseyNo == null ? "" : String(player.jerseyNo)
-  );
 
   return (
     <li className="bg-brand-50/40 p-3">
-      <div className="grid gap-2 sm:grid-cols-[1.5fr_1fr_1fr_80px_auto]">
+      <div className="grid gap-2 sm:grid-cols-[1.5fr_1fr_1fr_auto]">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -306,15 +285,6 @@ function EditRow({
           <option value="RIGHT">Right-hand</option>
           <option value="LEFT">Left-hand</option>
         </select>
-        <input
-          type="number"
-          min={0}
-          max={999}
-          value={jerseyNo}
-          onChange={(e) => setJerseyNo(e.target.value)}
-          className="input"
-          placeholder="#"
-        />
         <div className="flex gap-1">
           <button
             type="button"
@@ -323,8 +293,7 @@ function EditRow({
               onSave({
                 name: name.trim(),
                 role,
-                battingHand,
-                jerseyNo: jerseyNo === "" ? null : Number(jerseyNo)
+                battingHand
               })
             }
             className="btn-primary px-3 py-2 text-sm"

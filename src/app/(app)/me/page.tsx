@@ -90,8 +90,7 @@ export default async function MyProfilePage({
           role: player.role,
           battingHand: player.battingHand,
           bowlingArm: player.bowlingArm,
-          bowlingType: player.bowlingType,
-          jerseyNo: player.jerseyNo
+          bowlingType: player.bowlingType
         }}
       />
 

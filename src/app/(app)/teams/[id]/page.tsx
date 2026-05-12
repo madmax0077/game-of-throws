@@ -24,7 +24,7 @@ export default async function TeamDetailPage({
     where: { id: params.id },
     include: {
       tournament: true,
-      players: { orderBy: [{ jerseyNo: "asc" }, { createdAt: "asc" }] }
+      players: { orderBy: [{ name: "asc" }] }
     }
   });
 
@@ -55,7 +55,6 @@ export default async function TeamDetailPage({
               role: true,
               battingHand: true,
               bowlingArm: true,
-              jerseyNo: true,
               avatarUrl: true
             }
           })
@@ -66,8 +65,7 @@ export default async function TeamDetailPage({
     id: p.id,
     name: p.name,
     role: p.role,
-    battingHand: p.battingHand,
-    jerseyNo: p.jerseyNo
+    battingHand: p.battingHand
   }));
 
   // For player viewer: figure out their join state for THIS team.
@@ -190,8 +188,8 @@ export default async function TeamDetailPage({
                   key={p.id}
                   className="flex items-center gap-4 p-3"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-bold text-ink-700">
-                    {p.jerseyNo ?? "—"}
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
+                    {p.name[0]?.toUpperCase() ?? "?"}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="truncate text-sm font-semibold">{p.name}</p>
@@ -239,7 +237,6 @@ export default async function TeamDetailPage({
                 role: r.player.role,
                 battingHand: r.player.battingHand,
                 bowlingArm: r.player.bowlingArm,
-                jerseyNo: r.player.jerseyNo,
                 avatarUrl: r.player.avatarUrl
               }
             }))}

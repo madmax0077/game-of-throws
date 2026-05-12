@@ -10,7 +10,6 @@ type Initial = {
   battingHand: string;
   bowlingArm: string | null;
   bowlingType: string | null;
-  jerseyNo: number | null;
 };
 
 export function MyProfileEditor({ initial }: { initial: Initial }) {
@@ -21,9 +20,6 @@ export function MyProfileEditor({ initial }: { initial: Initial }) {
   const [battingHand, setBattingHand] = useState(initial.battingHand);
   const [bowlingArm, setBowlingArm] = useState(initial.bowlingArm ?? "");
   const [bowlingType, setBowlingType] = useState(initial.bowlingType ?? "");
-  const [jerseyNo, setJerseyNo] = useState<string>(
-    initial.jerseyNo == null ? "" : String(initial.jerseyNo)
-  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -42,8 +38,7 @@ export function MyProfileEditor({ initial }: { initial: Initial }) {
         role,
         battingHand,
         bowlingArm: bowlingArm || null,
-        bowlingType: bowlingType || null,
-        jerseyNo: jerseyNo === "" ? null : Number(jerseyNo)
+        bowlingType: bowlingType || null
       })
     });
     setSaving(false);
@@ -166,20 +161,6 @@ export function MyProfileEditor({ initial }: { initial: Initial }) {
             <option value="OFF_SPIN">Off-spin</option>
             <option value="LEG_SPIN">Leg-spin</option>
           </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="jerseyNo">
-            Jersey number
-          </label>
-          <input
-            id="jerseyNo"
-            type="number"
-            min={0}
-            max={999}
-            value={jerseyNo}
-            onChange={(e) => setJerseyNo(e.target.value)}
-            className="input"
-          />
         </div>
       </div>
 

@@ -169,8 +169,9 @@ async function PlayerDashboard({ userId, firstName }: { userId: string; firstNam
     })
   ]);
 
-  const profileIncomplete =
-    !myPlayer || !myPlayer.jerseyNo || !myPlayer.bowlingArm;
+  // Treat the profile as "needs your attention" until the player has filled
+  // in cricket-specific details that organizers care about.
+  const profileIncomplete = !myPlayer || !myPlayer.bowlingArm;
 
   return (
     <div className="space-y-8">
