@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, formatOvers } from "@/lib/utils";
 import { ShareWatchLink } from "@/components/ShareWatchLink";
+import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +139,10 @@ export default async function MatchDetail({
           ))
         )}
       </section>
+
+      {/* Auto-refresh the scoreboard while the match is live so spectators
+          see new balls without manually reloading. */}
+      {match.status === "LIVE" && <LiveAutoRefresh intervalMs={4000} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/utils";
+import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,8 @@ export default async function MatchesPage() {
           )}
         </section>
       ))}
+
+      {live.length > 0 && <LiveAutoRefresh intervalMs={5000} />}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/utils";
 import { isPlayer } from "@/lib/roles";
+import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +133,9 @@ async function OrganizerDashboard({ firstName }: { firstName: string }) {
           </div>
         </div>
       </section>
+
+      {/* Keep the 'Live now' tile fresh while at least one match is live. */}
+      {liveMatches.length > 0 && <LiveAutoRefresh intervalMs={5000} />}
     </div>
   );
 }
@@ -318,6 +322,8 @@ async function PlayerDashboard({ userId, firstName }: { userId: string; firstNam
           </div>
         </section>
       )}
+
+      {liveMatches.length > 0 && <LiveAutoRefresh intervalMs={5000} />}
     </div>
   );
 }

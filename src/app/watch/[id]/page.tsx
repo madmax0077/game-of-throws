@@ -338,8 +338,9 @@ export default async function WatchMatchPage({
         )}
       </main>
 
-      {/* Polls the RSC every 4s. No-op when match is completed (still safe, just unnecessary). */}
-      {!isCompleted && <LiveAutoRefresh intervalMs={4000} />}
+      {/* Polls the RSC every 3s while live (down from 4s) so spectators
+          see new balls almost immediately. */}
+      {!isCompleted && <LiveAutoRefresh intervalMs={3000} />}
     </div>
   );
 }
