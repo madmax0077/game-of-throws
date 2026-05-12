@@ -444,13 +444,23 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
     const overJustEnded = wasLegal && legalBallsAfter > 0 && legalBallsAfter % 6 === 0;
     const completedOverNumber = Math.floor(legalBallsAfter / 6);
 
+    // Split the click value into "runs to batter" vs "runs to extras":
+    //   - BYE / LEG_BYE  → 0 to batter, the full clicked value goes to extras
+    //                      (cricket rule: byes/leg-byes never credit the batter)
+    //   - WIDE / NO_BALL → +1 penalty into extras; any clicked runs stay with
+    //                      the batter (a runs-off-bat-on-a-no-ball is legitimate)
+    //   - No extra       → all runs to batter, no extras
+    const isByeOrLegBye = extraType === "BYE" || extraType === "LEG_BYE";
+    const runsToBatter = isByeOrLegBye ? 0 : opts.runs;
+    const extraRuns = isByeOrLegBye ? opts.runs : extraType ? 1 : 0;
+
     const body = {
       strikerId,
       nonStrikerId,
       bowlerId,
-      runs: opts.runs,
+      runs: runsToBatter,
       extraType,
-      extraRuns: extraType ? 1 : 0,
+      extraRuns,
       isWicket: opts.isWicket,
       wicketType: opts.wicketType ?? null,
       outBatterId: opts.outBatterId ?? null,
@@ -500,7 +510,10 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
 
   /* ----- Confirm a wicket from the wicket panel ----- */
   async function confirmWicket() {
-    if (!newBatterId) {
+    // If there are no more batters in the squad, this wicket is the last one:
+    // confirming it should still be allowed (API closes the innings on all-out).
+    const isLastWicket = availableNewBatters.length === 0;
+    if (!isLastWicket && !newBatterId) {
       alert("Please select the new incoming batter.");
       return;
     }
@@ -513,32 +526,34 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
     });
     if (!ok) return;
 
-    // After postBall has already applied odd-runs/over-end swaps, slot the new
-    // batter into whichever end the out batter occupied. Because postBall has
-    // already updated state (possibly swapping), we re-derive based on what's
-    // current in the closure values — but we want the FINAL state. Easiest:
-    // compute the post-swap positions ourselves.
-    const oddRuns = wicketRuns % 2 === 1;
-    const wasLegal =
-      !extraType || extraType === "BYE" || extraType === "LEG_BYE";
-    const legalBallsAfter = innings.totalBalls + (wasLegal ? 1 : 0);
-    const overJustEnded =
-      wasLegal && legalBallsAfter > 0 && legalBallsAfter % 6 === 0;
-    const swappedByLogic = oddRuns !== overJustEnded;
+    if (!isLastWicket) {
+      // After postBall has already applied odd-runs/over-end swaps, slot the new
+      // batter into whichever end the out batter occupied. Because postBall has
+      // already updated state (possibly swapping), we re-derive based on what's
+      // current in the closure values — but we want the FINAL state. Easiest:
+      // compute the post-swap positions ourselves.
+      const oddRuns = wicketRuns % 2 === 1;
+      const wasLegal =
+        !extraType || extraType === "BYE" || extraType === "LEG_BYE";
+      const legalBallsAfter = innings.totalBalls + (wasLegal ? 1 : 0);
+      const overJustEnded =
+        wasLegal && legalBallsAfter > 0 && legalBallsAfter % 6 === 0;
+      const swappedByLogic = oddRuns !== overJustEnded;
 
-    // Determine where the out batter ended up after the auto-swap:
-    //   if no swap and out=STRIKER  -> striker slot needs replacement
-    //   if no swap and out=NON_STRIKER -> non-striker slot needs replacement
-    //   if swap and out=STRIKER     -> they're now at non-striker slot (post-swap)
-    //   if swap and out=NON_STRIKER -> they're now at striker slot
-    const outNowAtStriker =
-      (outBatterEnd === "STRIKER" && !swappedByLogic) ||
-      (outBatterEnd === "NON_STRIKER" && swappedByLogic);
+      // Determine where the out batter ended up after the auto-swap:
+      //   if no swap and out=STRIKER  -> striker slot needs replacement
+      //   if no swap and out=NON_STRIKER -> non-striker slot needs replacement
+      //   if swap and out=STRIKER     -> they're now at non-striker slot (post-swap)
+      //   if swap and out=NON_STRIKER -> they're now at striker slot
+      const outNowAtStriker =
+        (outBatterEnd === "STRIKER" && !swappedByLogic) ||
+        (outBatterEnd === "NON_STRIKER" && swappedByLogic);
 
-    if (outNowAtStriker) {
-      setStrikerId(newBatterId);
-    } else {
-      setNonStrikerId(newBatterId);
+      if (outNowAtStriker) {
+        setStrikerId(newBatterId);
+      } else {
+        setNonStrikerId(newBatterId);
+      }
     }
 
     // Reset wicket-panel state
@@ -758,26 +773,34 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             </div>
 
             <div>
-              <label className="label">
-                New incoming batter <span className="text-brand-700">*</span>
-              </label>
-              <select
-                value={newBatterId}
-                onChange={(e) => setNewBatterId(e.target.value)}
-                className="input"
-                required
-              >
-                <option value="">Select new batter…</option>
-                {availableNewBatters.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              {availableNewBatters.length === 0 && (
-                <p className="mt-1.5 text-xs text-brand-700">
-                  No more batters available in this squad.
-                </p>
+              {availableNewBatters.length === 0 ? (
+                <>
+                  <label className="label">Last wicket</label>
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    <b>All out incoming.</b> No batters left in the squad —
+                    confirming this wicket will close the innings.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="label">
+                    New incoming batter{" "}
+                    <span className="text-brand-700">*</span>
+                  </label>
+                  <select
+                    value={newBatterId}
+                    onChange={(e) => setNewBatterId(e.target.value)}
+                    className="input"
+                    required
+                  >
+                    <option value="">Select new batter…</option>
+                    {availableNewBatters.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
             </div>
 
@@ -805,13 +828,22 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
           <button
             type="button"
             onClick={confirmWicket}
-            disabled={busy || !newBatterId}
+            disabled={
+              busy ||
+              (availableNewBatters.length > 0 && !newBatterId)
+            }
             className="btn-primary mt-5 h-12 w-full"
           >
-            {busy ? "Recording..." : "Confirm wicket"}
+            {busy
+              ? "Recording..."
+              : availableNewBatters.length === 0
+              ? "Confirm wicket & end innings"
+              : "Confirm wicket"}
           </button>
           <p className="mt-2 text-center text-xs text-ink-500">
-            Selecting the new batter is required — bowler stays the same.
+            {availableNewBatters.length === 0
+              ? "This is the final wicket — the innings will close automatically."
+              : "Selecting the new batter is required — bowler stays the same."}
           </p>
         </section>
       ) : (

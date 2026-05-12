@@ -92,6 +92,21 @@ export async function POST(
     })
   ]);
 
+  // Super Over auto-disable: the flag is a "this over only" multiplier.
+  // The moment a full over completes, switch it back off so the next over
+  // is a normal over again. Scorer can re-enable it at the start of the
+  // next over from the scoring board if needed.
+  const overJustEnded =
+    data.legal &&
+    updatedInnings.totalBalls > 0 &&
+    updatedInnings.totalBalls % 6 === 0;
+  if (overJustEnded && innings.isSuperOver) {
+    await prisma.innings.update({
+      where: { id: innings.id },
+      data: { isSuperOver: false }
+    });
+  }
+
   // Closure rules:
   //   1) All overs bowled (totalBalls >= match.overs * 6)
   //   2) All out — need at least 2 batters left, so wickets >= players - 1
