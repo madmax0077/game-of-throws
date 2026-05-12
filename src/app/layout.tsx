@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 
+// This app is fully auth-gated and reads live data from Postgres on every
+// request, so we never want static pre-rendering. Forcing dynamic rendering
+// at the root cascades to every page and avoids "Export encountered errors"
+// build failures from pages that depend on cookies/session/searchParams.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Game of Throws — World's Largest Cricket Network",
   description:
