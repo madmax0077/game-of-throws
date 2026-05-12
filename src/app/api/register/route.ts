@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 const RegisterSchema = z.object({
   name: z.string().min(2).max(80),
   email: z.string().email(),
-  password: z.string().min(8).max(128)
+  password: z.string().min(8).max(128),
+  role: z.enum(["ORGANIZER", "PLAYER"]).default("ORGANIZER")
 });
 
 export async function POST(req: Request) {
@@ -19,9 +20,10 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    const { name, email, password } = parsed.data;
+    const { name, email, password, role } = parsed.data;
+    const normalizedEmail = email.toLowerCase();
     const exists = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
+      where: { email: normalizedEmail }
     });
     if (exists) {
       return NextResponse.json(
@@ -30,11 +32,39 @@ export async function POST(req: Request) {
       );
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { name, email: email.toLowerCase(), passwordHash }
+
+    // Player accounts also get a corresponding Player profile so they can be
+    // picked when organizers build squads and so they can request to join teams.
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { name, email: normalizedEmail, passwordHash, role }
+      });
+      let player = null as { id: string } | null;
+      if (role === "PLAYER") {
+        player = await tx.player.create({
+          data: {
+            name,
+            role: "BATTER", // Sensible default; player can edit later on /me.
+            battingHand: "RIGHT",
+            userId: user.id
+          },
+          select: { id: true }
+        });
+      }
+      return { user, player };
     });
-    return NextResponse.json({ id: user.id, email: user.email }, { status: 201 });
+
+    return NextResponse.json(
+      {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        playerId: result.player?.id ?? null
+      },
+      { status: 201 }
+    );
   } catch (e) {
+    console.error("[register] error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

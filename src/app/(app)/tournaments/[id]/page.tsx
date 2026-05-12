@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { isPlayer } from "@/lib/roles";
 import { AddTeamForm } from "@/components/AddTeamForm";
 import { ScheduleMatchForm } from "@/components/ScheduleMatchForm";
+import { JoinTeamButton } from "@/components/JoinTeamButton";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +16,18 @@ export default async function TournamentDetailPage({
 }: {
   params: { id: string };
 }) {
+  const session = await getServerSession(authOptions);
+  const player = isPlayer(session?.user?.role);
+
   const tournament = await prisma.tournament.findUnique({
     where: { id: params.id },
     include: {
-      teams: { include: { _count: { select: { players: true } } } },
+      teams: {
+        include: {
+          _count: { select: { players: true } },
+          players: { select: { id: true, userId: true } }
+        }
+      },
       matches: {
         include: {
           homeTeam: true,
@@ -37,6 +49,35 @@ export default async function TournamentDetailPage({
   });
 
   if (!tournament) notFound();
+
+  // For the player view: figure out their join state per team.
+  // (We only fetch the data when actually viewing as a player.)
+  let myPlayer: { id: string; teamId: string | null } | null = null;
+  let myRequestsByTeam = new Map<string, "PENDING" | "APPROVED" | "REJECTED">();
+  if (player && session) {
+    const me = await prisma.player.findFirst({
+      where: { userId: session.user.id },
+      select: { id: true, teamId: true }
+    });
+    myPlayer = me;
+    if (me) {
+      const reqs = await prisma.joinRequest.findMany({
+        where: {
+          playerId: me.id,
+          teamId: { in: tournament.teams.map((t) => t.id) }
+        },
+        select: { teamId: true, status: true }
+      });
+      reqs.forEach((r) =>
+        myRequestsByTeam.set(r.teamId, r.status as "PENDING" | "APPROVED" | "REJECTED")
+      );
+    }
+  }
+
+  // Find the team I'm currently in within THIS tournament, if any.
+  const myTeamInThisTournament = tournament.teams.find((t) =>
+    t.players.some((p) => p.id === myPlayer?.id)
+  );
 
   // Points: wins worth 2, ties 1, losses 0.
   const stats = new Map<
@@ -128,6 +169,10 @@ export default async function TournamentDetailPage({
     shortName: t.shortName
   }));
 
+  // Players can request to join only when the tournament is still UPCOMING or LIVE.
+  const joinsOpen =
+    tournament.status === "UPCOMING" || tournament.status === "LIVE";
+
   return (
     <div className="space-y-8">
       <header className="card overflow-hidden p-0">
@@ -160,60 +205,143 @@ export default async function TournamentDetailPage({
         </div>
       </header>
 
+      {player && myTeamInThisTournament && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          You&apos;re playing for{" "}
+          <Link
+            href={`/teams/${myTeamInThisTournament.id}`}
+            className="font-bold underline"
+          >
+            {myTeamInThisTournament.name}
+          </Link>{" "}
+          in this tournament.
+        </div>
+      )}
+
       {/* Teams */}
       <section className="card p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-lg font-bold">Teams</h2>
-          <AddTeamForm tournamentId={tournament.id} />
+          {!player && <AddTeamForm tournamentId={tournament.id} />}
         </div>
         {tournament.teams.length === 0 ? (
           <p className="mt-4 text-sm text-ink-500">
-            No teams yet. Click <b>+ Add team</b> to add your first one.
+            {player
+              ? "No teams have joined yet — check back soon."
+              : "No teams yet. Click + Add team to add your first one."}
           </p>
         ) : (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {tournament.teams.map((t) => (
-              <Link
-                key={t.id}
-                href={`/teams/${t.id}`}
-                className="flex items-center justify-between rounded-lg border border-ink-100 p-3 hover:border-brand-200 hover:bg-brand-50/30"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-700 text-sm font-bold text-white">
-                    {t.shortName}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">{t.name}</p>
-                    <p className="text-xs text-ink-500">
-                      {t._count.players} players
-                      {t.homeCity ? ` • ${t.homeCity}` : ""}
-                    </p>
-                  </div>
+            {tournament.teams.map((t) => {
+              let joinState:
+                | "ALREADY_IN_TEAM"
+                | "REQUESTED_PENDING"
+                | "REQUESTED_APPROVED"
+                | "REQUESTED_REJECTED"
+                | "CAN_REQUEST"
+                | "PROFILE_MISSING"
+                | "NOT_OPEN"
+                | null = null;
+              if (player) {
+                if (!myPlayer) joinState = "PROFILE_MISSING";
+                else if (myTeamInThisTournament) joinState = "ALREADY_IN_TEAM";
+                else if (myRequestsByTeam.has(t.id)) {
+                  const s = myRequestsByTeam.get(t.id)!;
+                  joinState =
+                    s === "PENDING"
+                      ? "REQUESTED_PENDING"
+                      : s === "APPROVED"
+                      ? "REQUESTED_APPROVED"
+                      : "REQUESTED_REJECTED";
+                } else if (!joinsOpen) joinState = "NOT_OPEN";
+                else joinState = "CAN_REQUEST";
+              }
+
+              return (
+                <div
+                  key={t.id}
+                  className="flex flex-col gap-3 rounded-lg border border-ink-100 p-3 hover:border-brand-200 hover:bg-brand-50/30"
+                >
+                  <Link
+                    href={`/teams/${t.id}`}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-700 text-sm font-bold text-white">
+                      {t.shortName}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{t.name}</p>
+                      <p className="text-xs text-ink-500">
+                        {t._count.players} players
+                        {t.homeCity ? ` • ${t.homeCity}` : ""}
+                      </p>
+                    </div>
+                  </Link>
+                  {player && joinState && joinState !== "ALREADY_IN_TEAM" && (
+                    <div className="flex items-center justify-between">
+                      {joinState === "PROFILE_MISSING" && (
+                        <Link href="/me" className="btn-outline text-xs">
+                          Complete profile to join →
+                        </Link>
+                      )}
+                      {joinState === "NOT_OPEN" && (
+                        <span className="text-xs text-ink-500">
+                          Tournament closed
+                        </span>
+                      )}
+                      {joinState === "REQUESTED_PENDING" && (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                          Request pending
+                        </span>
+                      )}
+                      {joinState === "REQUESTED_APPROVED" && (
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                          Approved ✓
+                        </span>
+                      )}
+                      {joinState === "REQUESTED_REJECTED" && (
+                        <JoinTeamButton
+                          small
+                          teamId={t.id}
+                          state={{ kind: "CAN_REQUEST" }}
+                        />
+                      )}
+                      {joinState === "CAN_REQUEST" && (
+                        <JoinTeamButton
+                          small
+                          teamId={t.id}
+                          state={{ kind: "CAN_REQUEST" }}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* Schedule a match */}
-      <section className="card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-display text-lg font-bold">Schedule a match</h2>
-            <p className="text-sm text-ink-500">
-              Scoring can start immediately — schedule time is informational only.
-            </p>
+      {/* Schedule a match — organizer only */}
+      {!player && (
+        <section className="card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-bold">Schedule a match</h2>
+              <p className="text-sm text-ink-500">
+                Scoring can start immediately — schedule time is informational only.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="mt-4">
-          <ScheduleMatchForm
-            tournamentId={tournament.id}
-            teams={teamsForSelect}
-            defaultOvers={tournament.overs}
-          />
-        </div>
-      </section>
+          <div className="mt-4">
+            <ScheduleMatchForm
+              tournamentId={tournament.id}
+              teams={teamsForSelect}
+              defaultOvers={tournament.overs}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Fixtures */}
       <section className="card p-6">
@@ -222,36 +350,41 @@ export default async function TournamentDetailPage({
           {tournament.matches.length === 0 && (
             <p className="text-sm text-ink-500">No matches scheduled yet.</p>
           )}
-          {tournament.matches.map((m) => (
-            <Link
-              key={m.id}
-              href={`/matches/${m.id}`}
-              className="flex items-center justify-between rounded-lg border border-ink-100 p-4 hover:border-brand-200"
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col items-center text-xs text-ink-500">
-                  <span>{formatDateTime(m.scheduledAt).split(",")[0]}</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">
-                    {m.homeTeam.name} vs {m.awayTeam.name}
-                  </p>
-                  <p className="text-xs text-ink-500">{m.venue}</p>
-                </div>
-              </div>
-              <span
-                className={
-                  m.status === "LIVE"
-                    ? "badge-live"
-                    : m.status === "COMPLETED"
-                    ? "badge-completed"
-                    : "badge-upcoming"
-                }
+          {tournament.matches.map((m) => {
+            // Players use the public watch view; organizers go to the
+            // match detail / scoring page.
+            const href = player ? `/watch/${m.id}` : `/matches/${m.id}`;
+            return (
+              <Link
+                key={m.id}
+                href={href}
+                className="flex items-center justify-between rounded-lg border border-ink-100 p-4 hover:border-brand-200"
               >
-                {m.status}
-              </span>
-            </Link>
-          ))}
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col items-center text-xs text-ink-500">
+                    <span>{formatDateTime(m.scheduledAt).split(",")[0]}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {m.homeTeam.name} vs {m.awayTeam.name}
+                    </p>
+                    <p className="text-xs text-ink-500">{m.venue}</p>
+                  </div>
+                </div>
+                <span
+                  className={
+                    m.status === "LIVE"
+                      ? "badge-live"
+                      : m.status === "COMPLETED"
+                      ? "badge-completed"
+                      : "badge-upcoming"
+                  }
+                >
+                  {m.status}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </section>
 

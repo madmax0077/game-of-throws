@@ -1,105 +1,72 @@
-"use client";
-
-import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export default function SignupPage() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await fetch("/api/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email, password })
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not create account.");
-      setLoading(false);
-      return;
-    }
-
-    const signed = await signIn("credentials", {
-      email,
-      password,
-      redirect: false
-    });
-    setLoading(false);
-    if (signed?.error) setError("Account created but sign-in failed.");
-    else router.push("/dashboard");
-  }
-
+export default function SignupChoicePage() {
   return (
     <div className="card p-8">
       <h1 className="font-display text-2xl font-bold">Create your account</h1>
       <p className="mt-1 text-sm text-ink-500">
-        Join 12M+ cricketers on Game of Throws.
+        Choose how you&apos;ll use Game of Throws.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div>
-          <label className="label" htmlFor="name">Full name</label>
-          <input
-            id="name"
-            required
-            minLength={2}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input"
-            placeholder="Sachin Tendulkar"
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="input"
-            placeholder="you@example.com"
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="input"
-            placeholder="Min. 8 characters"
-          />
-        </div>
-
-        {error && (
-          <div className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800">
-            {error}
+      <div className="mt-6 space-y-3">
+        <Link
+          href="/signup/organizer"
+          className="group block rounded-2xl border border-ink-200 p-5 transition hover:border-brand-300 hover:bg-brand-50/30"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M8 21h8M12 17v4M5 4h14v9a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5V4Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-display text-base font-bold text-ink-900">
+                I&apos;m an Organizer
+              </p>
+              <p className="mt-0.5 text-sm text-ink-600">
+                Schedule tournaments, build squads, score matches ball-by-ball,
+                publish live links.
+              </p>
+            </div>
+            <span className="text-brand-700 transition group-hover:translate-x-0.5">
+              →
+            </span>
           </div>
-        )}
+        </Link>
 
-        <button type="submit" className="btn-primary w-full" disabled={loading}>
-          {loading ? "Creating..." : "Create account"}
-        </button>
-      </form>
+        <Link
+          href="/signup/player"
+          className="group block rounded-2xl border border-ink-200 p-5 transition hover:border-brand-300 hover:bg-brand-50/30"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+                <path d="M4 21a8 8 0 0 1 16 0" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-display text-base font-bold text-ink-900">
+                I&apos;m a Player
+              </p>
+              <p className="mt-0.5 text-sm text-ink-600">
+                Build your cricket profile, watch live scores, join teams in
+                tournaments near you.
+              </p>
+            </div>
+            <span className="text-brand-700 transition group-hover:translate-x-0.5">
+              →
+            </span>
+          </div>
+        </Link>
+      </div>
 
       <p className="mt-6 text-center text-sm text-ink-600">
-        Already a member?{" "}
+        Already have an account?{" "}
         <Link href="/login" className="font-semibold text-brand-700 hover:underline">
           Sign in
         </Link>

@@ -2,14 +2,12 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export default function LoginPage() {
+export default function PlayerSignupPage() {
   const router = useRouter();
-  const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/dashboard";
-
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -19,21 +17,48 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const res = await signIn("credentials", {
+
+    const res = await fetch("/api/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, email, password, role: "PLAYER" })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not create account.");
+      setLoading(false);
+      return;
+    }
+
+    const signed = await signIn("credentials", {
       email,
       password,
       redirect: false
     });
     setLoading(false);
-    if (res?.error) setError("Invalid email or password.");
-    else router.push(callbackUrl);
+    if (signed?.error) setError("Account created but sign-in failed.");
+    else router.push("/me?welcome=1");
   }
 
   return (
     <div className="card p-8">
-      <h1 className="font-display text-2xl font-bold">Welcome back</h1>
+      <Link
+        href="/signup"
+        className="mb-3 inline-flex items-center gap-1 text-sm text-ink-500 hover:text-ink-700"
+      >
+        ← Back
+      </Link>
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
+          PLAYER
+        </span>
+      </div>
+      <h1 className="mt-2 font-display text-2xl font-bold">
+        Create your player profile
+      </h1>
       <p className="mt-1 text-sm text-ink-500">
-        Sign in to score live, manage tournaments or follow your team.
+        Watch live tournaments, build your cricket CV, get picked for teams.
       </p>
 
       {/* Continue-with-Google placeholder. Wired up but disabled until
@@ -59,30 +84,40 @@ export default function LoginPage() {
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
+          <label className="label" htmlFor="name">Your name</label>
+          <input
+            id="name"
+            required
+            minLength={2}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="input"
+            placeholder="Virat Kohli"
+          />
+        </div>
+        <div>
           <label className="label" htmlFor="email">Email</label>
           <input
             id="email"
             type="email"
             required
-            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="input"
             placeholder="you@example.com"
           />
         </div>
-
         <div>
           <label className="label" htmlFor="password">Password</label>
           <input
             id="password"
             type="password"
             required
-            autoComplete="current-password"
+            minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="input"
-            placeholder="••••••••"
+            placeholder="Min. 8 characters"
           />
         </div>
 
@@ -93,28 +128,25 @@ export default function LoginPage() {
         )}
 
         <button type="submit" className="btn-primary w-full" disabled={loading}>
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? "Creating..." : "Create player profile"}
         </button>
       </form>
 
-      <div className="mt-6 grid gap-2 text-center text-sm text-ink-600 sm:grid-cols-2">
+      <p className="mt-6 text-center text-sm text-ink-600">
+        Are you an organizer?{" "}
         <Link
           href="/signup/organizer"
-          className="rounded-lg border border-ink-100 px-3 py-2 hover:border-brand-200 hover:bg-brand-50/30"
+          className="font-semibold text-brand-700 hover:underline"
         >
-          <span className="block font-semibold text-ink-900">
-            New organizer?
-          </span>
-          <span className="block text-xs text-ink-500">Create an account</span>
+          Sign up as organizer
         </Link>
-        <Link
-          href="/signup/player"
-          className="rounded-lg border border-ink-100 px-3 py-2 hover:border-brand-200 hover:bg-brand-50/30"
-        >
-          <span className="block font-semibold text-ink-900">New player?</span>
-          <span className="block text-xs text-ink-500">Build your profile</span>
+      </p>
+      <p className="mt-2 text-center text-sm text-ink-600">
+        Already have an account?{" "}
+        <Link href="/login" className="font-semibold text-brand-700 hover:underline">
+          Sign in
         </Link>
-      </div>
+      </p>
     </div>
   );
 }
