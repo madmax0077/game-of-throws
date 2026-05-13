@@ -56,6 +56,7 @@ export default async function ScorePage({
         id: match.id,
         overs: match.overs,
         status: match.status,
+        resultText: match.resultText,
         homeTeam: {
           id: match.homeTeam.id,
           shortName: match.homeTeam.shortName,

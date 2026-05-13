@@ -33,6 +33,7 @@ type Match = {
   id: string;
   overs: number;
   status: string;
+  resultText: string | null;
   homeTeam: Team;
   awayTeam: Team;
   innings: Innings[];
@@ -70,6 +71,18 @@ export function ScoreEntry({ match }: { match: Match }) {
 
 /* -------------------- Match result -------------------- */
 
+// Server gives us strings like "MUM won by 7 wickets", "CHE won by 12 runs"
+// or "Match tied". Split into a bold headline ("MUM won") and a soft
+// subhead ("by 7 wickets") so the result card reads nicely.
+function splitResult(text: string): { headline: string; subhead: string } {
+  if (/^match tied/i.test(text)) {
+    return { headline: "Match tied", subhead: "Both teams finished on equal scores" };
+  }
+  const m = text.match(/^(.*?\bwon)\s+(by\s+.+)$/i);
+  if (m) return { headline: m[1], subhead: m[2] };
+  return { headline: text, subhead: "" };
+}
+
 function MatchResult({ match }: { match: Match }) {
   const totalsByTeam = (teamId: string) =>
     match.innings
@@ -86,9 +99,16 @@ function MatchResult({ match }: { match: Match }) {
   const home = totalsByTeam(match.homeTeam.id);
   const away = totalsByTeam(match.awayTeam.id);
 
+  // Prefer the server-computed result string when present — it knows the
+  // correct cricket convention ("by N wickets" for a chase win) which we
+  // can't easily reproduce on the client without team squad sizes.
   let headline: string;
   let subhead: string;
-  if (home.runs > away.runs) {
+  const parsed = match.resultText ? splitResult(match.resultText) : null;
+  if (parsed) {
+    headline = parsed.headline;
+    subhead = parsed.subhead;
+  } else if (home.runs > away.runs) {
     headline = `${match.homeTeam.name} won`;
     subhead = `by ${home.runs - away.runs} runs`;
   } else if (away.runs > home.runs) {

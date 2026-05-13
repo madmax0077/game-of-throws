@@ -107,24 +107,50 @@ export async function POST(
     });
   }
 
+  // For a 2nd innings we also need to know the first-innings total so the
+  // chase can be closed the instant the target is overhauled.
+  let firstInningsRuns: number | null = null;
+  if (innings.number === 2) {
+    const first = await prisma.innings.findFirst({
+      where: { matchId: innings.match.id, number: 1 },
+      select: { totalRuns: true }
+    });
+    firstInningsRuns = first?.totalRuns ?? null;
+  }
+
   // Closure rules:
   //   1) All overs bowled (totalBalls >= match.overs * 6)
   //   2) All out — need at least 2 batters left, so wickets >= players - 1
+  //   3) Target reached — chasing side (innings 2) has overtaken the
+  //      first-innings total. Match is decided, no point bowling the
+  //      remaining overs.
   const overLimitReached = updatedInnings.totalBalls >= innings.match.overs * 6;
   const allOut =
     battingTeamPlayerCount >= 2 &&
     updatedInnings.totalWickets >= battingTeamPlayerCount - 1;
+  const targetReached =
+    firstInningsRuns !== null && updatedInnings.totalRuns > firstInningsRuns;
 
   let closed = false;
-  let closureReason: "OVERS_COMPLETED" | "ALL_OUT" | null = null;
+  let closureReason:
+    | "OVERS_COMPLETED"
+    | "ALL_OUT"
+    | "TARGET_REACHED"
+    | null = null;
   let matchCompleted = false;
-  if (overLimitReached || allOut) {
+  if (overLimitReached || allOut || targetReached) {
     await prisma.innings.update({
       where: { id: innings.id },
       data: { isClosed: true }
     });
     closed = true;
-    closureReason = overLimitReached ? "OVERS_COMPLETED" : "ALL_OUT";
+    // Target reached trumps the other reasons — a winning hit on the last
+    // legal ball of the over is still a chase-win, not an "overs completed".
+    closureReason = targetReached
+      ? "TARGET_REACHED"
+      : overLimitReached
+      ? "OVERS_COMPLETED"
+      : "ALL_OUT";
 
     // Match-completion check: both teams must have at least one CLOSED innings.
     // (The innings we just closed is included via the OR clause below.)
@@ -160,10 +186,26 @@ export async function POST(
         teams.find((t) => t.id === innings.match.awayTeamId)?.shortName ?? "Away";
 
       let resultText: string;
-      if (homeTotal > awayTotal) {
-        resultText = `${homeShort} won by ${homeTotal - awayTotal} runs`;
+      if (targetReached) {
+        // Chasing team (current innings' batting team) won. Conventional
+        // cricket: "X won by N wickets" where N = wickets in hand.
+        const wicketsInHand =
+          battingTeamPlayerCount >= 2
+            ? Math.max(0, battingTeamPlayerCount - 1 - updatedInnings.totalWickets)
+            : 0;
+        const chasingShort =
+          innings.battingTeamId === innings.match.homeTeamId
+            ? homeShort
+            : awayShort;
+        resultText = `${chasingShort} won by ${wicketsInHand} wicket${
+          wicketsInHand === 1 ? "" : "s"
+        }`;
+      } else if (homeTotal > awayTotal) {
+        const diff = homeTotal - awayTotal;
+        resultText = `${homeShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
       } else if (awayTotal > homeTotal) {
-        resultText = `${awayShort} won by ${awayTotal - homeTotal} runs`;
+        const diff = awayTotal - homeTotal;
+        resultText = `${awayShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
       } else {
         resultText = "Match tied";
       }
