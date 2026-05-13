@@ -786,7 +786,15 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
               <label className="label">Wicket type</label>
               <select
                 value={wicketType}
-                onChange={(e) => setWicketType(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setWicketType(v);
+                  // Clear a stale fielder selection when switching to a
+                  // dismissal type that doesn't credit one.
+                  if (!["CAUGHT", "RUN_OUT", "STUMPED"].includes(v)) {
+                    setFielderId("");
+                  }
+                }}
                 className="input"
               >
                 {WICKET_TYPES.map((w) => (
