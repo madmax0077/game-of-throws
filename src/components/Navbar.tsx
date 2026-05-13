@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { Logo } from "./Logo";
 
 const NAV_LINKS = [
@@ -14,6 +15,11 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  // If a signed-in user somehow ends up on the landing page (e.g. server
+  // redirect raced their click), we still want the navbar to reflect
+  // their session so the page doesn't look like they were logged out.
+  const { status } = useSession();
+  const isAuthed = status === "authenticated";
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-ink-100 bg-white/90 backdrop-blur">
@@ -33,12 +39,20 @@ export function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Link href="/login" className="btn-ghost">
-            Sign in
-          </Link>
-          <Link href="/signup" className="btn-primary">
-            Get started
-          </Link>
+          {isAuthed ? (
+            <Link href="/dashboard" className="btn-primary">
+              Open dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/login" className="btn-ghost">
+                Sign in
+              </Link>
+              <Link href="/signup" className="btn-primary">
+                Get started
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -66,12 +80,32 @@ export function Navbar() {
               </Link>
             ))}
             <div className="flex gap-2 pt-2">
-              <Link href="/login" className="btn-outline flex-1" onClick={() => setOpen(false)}>
-                Sign in
-              </Link>
-              <Link href="/signup" className="btn-primary flex-1" onClick={() => setOpen(false)}>
-                Get started
-              </Link>
+              {isAuthed ? (
+                <Link
+                  href="/dashboard"
+                  className="btn-primary flex-1"
+                  onClick={() => setOpen(false)}
+                >
+                  Open dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="btn-outline flex-1"
+                    onClick={() => setOpen(false)}
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="btn-primary flex-1"
+                    onClick={() => setOpen(false)}
+                  >
+                    Get started
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
