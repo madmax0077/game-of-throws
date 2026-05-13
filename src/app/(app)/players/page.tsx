@@ -11,6 +11,10 @@ type PlayerStats = {
   wickets: number;
   ballsBowled: number;
   runsConceded: number;
+  // Fielding contributions: catches, run-outs, stumpings
+  catches: number;
+  runOuts: number;
+  stumpings: number;
 };
 
 function emptyStats(): PlayerStats {
@@ -21,7 +25,10 @@ function emptyStats(): PlayerStats {
     sixes: 0,
     wickets: 0,
     ballsBowled: 0,
-    runsConceded: 0
+    runsConceded: 0,
+    catches: 0,
+    runOuts: 0,
+    stumpings: 0
   };
 }
 
@@ -35,6 +42,7 @@ export default async function PlayersPage() {
       select: {
         strikerId: true,
         bowlerId: true,
+        fielderId: true,
         runs: true,
         extraType: true,
         extraRuns: true,
@@ -79,13 +87,27 @@ export default async function PlayersPage() {
     if (b.isWicket && b.wicketType && b.wicketType !== "RUN_OUT") {
       bowl.wickets += 1;
     }
+
+    // Fielding credit — catch / run-out / stumping go to the named fielder.
+    if (b.isWicket && b.fielderId && b.wicketType) {
+      const f = ensure(b.fielderId);
+      if (b.wicketType === "CAUGHT") f.catches += 1;
+      else if (b.wicketType === "RUN_OUT") f.runOuts += 1;
+      else if (b.wicketType === "STUMPED") f.stumpings += 1;
+    }
   }
 
-  // Performance rating: runs + 25 × wickets, with small bonuses for boundaries.
-  // It's intentionally simple so users can predict it, and rewards both
-  // batters and bowlers comparably.
+  // Performance rating: runs + 25 × wickets + 8 × fielding dismissals,
+  // plus small bonuses for boundaries. Kept intentionally simple so the
+  // ranking is predictable and rewards every role on the field.
   function rate(s: PlayerStats) {
-    return s.runs + s.wickets * 25 + s.fours * 1 + s.sixes * 2;
+    return (
+      s.runs +
+      s.wickets * 25 +
+      (s.catches + s.runOuts + s.stumpings) * 8 +
+      s.fours * 1 +
+      s.sixes * 2
+    );
   }
 
   const ranked = players
@@ -110,7 +132,7 @@ export default async function PlayersPage() {
         <p className="mt-1 text-ink-600">
           Ranked by performance:{" "}
           <span className="font-semibold">
-            runs + 25 × wickets + boundary bonuses
+            runs + 25 × wickets + 8 × fielding dismissals + boundary bonuses
           </span>
           .
         </p>
@@ -131,6 +153,7 @@ export default async function PlayersPage() {
               teamName={r.player.team?.name ?? "Free agent"}
               runs={r.stats.runs}
               wickets={r.stats.wickets}
+              fielding={r.stats.catches + r.stats.runOuts + r.stats.stumpings}
               rating={r.rating}
               href={`/players/${r.player.id}`}
             />
@@ -148,6 +171,7 @@ function PlayerRankCard({
   teamName,
   runs,
   wickets,
+  fielding,
   rating,
   href
 }: {
@@ -157,6 +181,7 @@ function PlayerRankCard({
   teamName: string;
   runs: number;
   wickets: number;
+  fielding: number;
   rating: number;
   href: string;
 }) {
@@ -194,6 +219,11 @@ function PlayerRankCard({
           <span className="text-ink-700">
             <b>{wickets}</b> wkts
           </span>
+          {fielding > 0 && (
+            <span className="text-ink-700">
+              <b>{fielding}</b> fielding
+            </span>
+          )}
           <span className="font-semibold text-brand-700">
             Rating {rating}
           </span>

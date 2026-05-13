@@ -4,22 +4,37 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const CreateSchema = z.object({
-  strikerId: z.string(),
-  nonStrikerId: z.string(),
-  bowlerId: z.string(),
-  runs: z.number().int().min(0).max(7),
-  extraType: z.enum(["WIDE", "NO_BALL", "BYE", "LEG_BYE", "PENALTY"]).nullable().optional(),
-  extraRuns: z.number().int().min(0).max(7).default(0),
-  isWicket: z.boolean().default(false),
-  wicketType: z
-    .enum(["BOWLED", "CAUGHT", "LBW", "RUN_OUT", "STUMPED", "HIT_WICKET"])
-    .nullable()
-    .optional(),
-  outBatterId: z.string().nullable().optional(),
-  commentary: z.string().nullable().optional(),
-  legal: z.boolean().default(true)
-});
+// Wicket types that require a fielder to be credited:
+//   CAUGHT   → catcher
+//   RUN_OUT  → fielder who broke the stumps
+//   STUMPED  → wicket-keeper
+const FIELDER_WICKETS = new Set(["CAUGHT", "RUN_OUT", "STUMPED"]);
+
+const CreateSchema = z
+  .object({
+    strikerId: z.string(),
+    nonStrikerId: z.string(),
+    bowlerId: z.string(),
+    runs: z.number().int().min(0).max(7),
+    extraType: z.enum(["WIDE", "NO_BALL", "BYE", "LEG_BYE", "PENALTY"]).nullable().optional(),
+    extraRuns: z.number().int().min(0).max(7).default(0),
+    isWicket: z.boolean().default(false),
+    wicketType: z
+      .enum(["BOWLED", "CAUGHT", "LBW", "RUN_OUT", "STUMPED", "HIT_WICKET"])
+      .nullable()
+      .optional(),
+    outBatterId: z.string().nullable().optional(),
+    fielderId: z.string().nullable().optional(),
+    commentary: z.string().nullable().optional(),
+    legal: z.boolean().default(true)
+  })
+  .refine(
+    (d) => !(d.isWicket && d.wicketType && FIELDER_WICKETS.has(d.wicketType) && !d.fielderId),
+    {
+      message: "fielderId is required for CAUGHT, RUN_OUT and STUMPED wickets.",
+      path: ["fielderId"]
+    }
+  );
 
 export async function POST(
   req: Request,
@@ -79,6 +94,7 @@ export async function POST(
         nonStrikerId: data.nonStrikerId,
         bowlerId: data.bowlerId,
         outBatterId: data.outBatterId ?? null,
+        fielderId: data.fielderId ?? null,
         commentary: data.commentary ?? null
       }
     }),

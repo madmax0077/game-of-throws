@@ -91,6 +91,7 @@ model Player {
   ballsAsNonStriker Ball[] @relation("NonStriker")
   ballsAsBowler     Ball[] @relation("Bowler")
   ballsAsOutBatter  Ball[] @relation("OutBatter")
+  ballsAsFielder    Ball[] @relation("Fielder")
 
   joinRequests JoinRequest[]
 
@@ -157,6 +158,9 @@ model Ball {
   nonStrikerId String
   bowlerId     String
   outBatterId  String?
+  // The fielder credited with the dismissal — required for CAUGHT/RUN_OUT/STUMPED
+  // wicket types, null otherwise. Used to award fielding points in player stats.
+  fielderId    String?
   commentary   String?
   createdAt    DateTime @default(now())
 
@@ -165,10 +169,12 @@ model Ball {
   nonStriker Player  @relation("NonStriker", fields: [nonStrikerId], references: [id])
   bowler     Player  @relation("Bowler", fields: [bowlerId], references: [id])
   outBatter  Player? @relation("OutBatter", fields: [outBatterId], references: [id])
+  fielder    Player? @relation("Fielder", fields: [fielderId], references: [id])
 
   @@index([inningsId])
   @@index([bowlerId])
   @@index([strikerId])
+  @@index([fielderId])
 }
 
 // A player can REQUEST to join a team in a scheduled tournament. The team's

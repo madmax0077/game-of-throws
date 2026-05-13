@@ -397,6 +397,18 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
   const [outBatterEnd, setOutBatterEnd] = useState<"STRIKER" | "NON_STRIKER">("STRIKER");
   const [newBatterId, setNewBatterId] = useState("");
   const [wicketRuns, setWicketRuns] = useState(0);
+  const [fielderId, setFielderId] = useState("");
+
+  // Catch / run-out / stumping all need a fielder credited.
+  const fielderRequired =
+    wicketType === "CAUGHT" || wicketType === "RUN_OUT" || wicketType === "STUMPED";
+  // Label for the dropdown adapts to the dismissal type.
+  const fielderLabel =
+    wicketType === "CAUGHT"
+      ? "Caught by"
+      : wicketType === "STUMPED"
+      ? "Stumped by"
+      : "Run out by";
 
   const overStr = useMemo(() => formatOvers(innings.totalBalls), [innings.totalBalls]);
 
@@ -444,6 +456,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
     isWicket: boolean;
     wicketType?: string | null;
     outBatterId?: string | null;
+    fielderId?: string | null;
   }): Promise<boolean> {
     if (!strikerId || !nonStrikerId || !bowlerId) {
       alert("Please select striker, non-striker and bowler.");
@@ -484,6 +497,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
       isWicket: opts.isWicket,
       wicketType: opts.wicketType ?? null,
       outBatterId: opts.outBatterId ?? null,
+      fielderId: opts.fielderId ?? null,
       legal: wasLegal
     };
 
@@ -537,12 +551,17 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
       alert("Please select the new incoming batter.");
       return;
     }
+    if (fielderRequired && !fielderId) {
+      alert(`Please select the ${fielderLabel.toLowerCase()} fielder.`);
+      return;
+    }
     const outId = outBatterEnd === "STRIKER" ? strikerId : nonStrikerId;
     const ok = await postBall({
       runs: wicketRuns,
       isWicket: true,
       wicketType,
-      outBatterId: outId
+      outBatterId: outId,
+      fielderId: fielderRequired ? fielderId : null
     });
     if (!ok) return;
 
@@ -582,6 +601,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
     setOutBatterEnd("STRIKER");
     setNewBatterId("");
     setWicketRuns(0);
+    setFielderId("");
 
     router.refresh();
   }
@@ -753,6 +773,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
                 setWicketMode(false);
                 setNewBatterId("");
                 setWicketRuns(0);
+                setFielderId("");
               }}
               className="text-sm text-ink-600 hover:underline"
             >
@@ -791,6 +812,32 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
                 />
               </div>
             </div>
+
+            {/* Fielder picker — only shown when the dismissal type credits one */}
+            {fielderRequired && (
+              <div>
+                <label className="label">
+                  {fielderLabel} <span className="text-brand-700">*</span>
+                </label>
+                <select
+                  value={fielderId}
+                  onChange={(e) => setFielderId(e.target.value)}
+                  className="input"
+                  required
+                >
+                  <option value="">Select fielder…</option>
+                  {bowlingTeam.players.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.id === bowlerId ? " (bowler)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-ink-500">
+                  Fielding credit will be added to this player&apos;s stats.
+                </p>
+              </div>
+            )}
 
             <div>
               {availableNewBatters.length === 0 ? (
@@ -850,7 +897,8 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             onClick={confirmWicket}
             disabled={
               busy ||
-              (availableNewBatters.length > 0 && !newBatterId)
+              (availableNewBatters.length > 0 && !newBatterId) ||
+              (fielderRequired && !fielderId)
             }
             className="btn-primary mt-5 h-12 w-full"
           >
