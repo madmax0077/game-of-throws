@@ -3,6 +3,11 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isAdmin } from "@/lib/roles";
+import {
+  getViewer,
+  tournamentVisibilityWhere
+} from "@/lib/tournamentVisibility";
 
 const CreateSchema = z.object({
   name: z.string().min(2).max(120),
@@ -13,7 +18,9 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
+  const viewer = await getViewer();
   const tournaments = await prisma.tournament.findMany({
+    where: tournamentVisibilityWhere(viewer),
     orderBy: { startDate: "desc" }
   });
   return NextResponse.json(tournaments);
@@ -32,6 +39,10 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+  const creator = session.user;
+  // Admins create pre-approved tournaments; everyone else has to wait for an
+  // admin to approve before the tournament becomes publicly visible.
+  const adminCreator = isAdmin(creator.role);
   const tournament = await prisma.tournament.create({
     data: {
       name: data.name,
@@ -41,7 +52,10 @@ export async function POST(req: Request) {
       ballType: "LEATHER",
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
-      organizerId: (session.user as any).id
+      organizerId: creator.id,
+      approvalStatus: adminCreator ? "APPROVED" : "PENDING",
+      approvedAt: adminCreator ? new Date() : null,
+      approvedById: adminCreator ? creator.id : null
     }
   });
   return NextResponse.json(tournament, { status: 201 });

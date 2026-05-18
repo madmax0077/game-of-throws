@@ -4,36 +4,72 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/utils";
 import { isPlayer } from "@/lib/roles";
+import {
+  matchTournamentVisibilityWhere,
+  tournamentVisibilityWhere,
+  type ViewerContext
+} from "@/lib/tournamentVisibility";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
+  const viewer: ViewerContext = {
+    userId: session?.user?.id ?? null,
+    role: session?.user?.role ?? null
+  };
   if (isPlayer(session?.user?.role)) {
-    return <PlayerDashboard userId={session!.user.id} firstName={session!.user.name?.split(" ")[0] ?? "Cricketer"} />;
+    return (
+      <PlayerDashboard
+        viewer={viewer}
+        userId={session!.user.id}
+        firstName={session!.user.name?.split(" ")[0] ?? "Cricketer"}
+      />
+    );
   }
-  return <OrganizerDashboard firstName={session?.user?.name?.split(" ")[0] ?? "Cricketer"} />;
+  return (
+    <OrganizerDashboard
+      viewer={viewer}
+      firstName={session?.user?.name?.split(" ")[0] ?? "Cricketer"}
+    />
+  );
 }
 
-async function OrganizerDashboard({ firstName }: { firstName: string }) {
-  const [tournamentsCount, teamsCount, playersCount, liveMatches, upcoming, pendingJoinCount] =
+async function OrganizerDashboard({
+  viewer,
+  firstName
+}: {
+  viewer: ViewerContext;
+  firstName: string;
+}) {
+  const visibilityWhere = tournamentVisibilityWhere(viewer);
+  const matchVisibilityWhere = matchTournamentVisibilityWhere(viewer);
+  const [tournamentsCount, teamsCount, playersCount, liveMatches, upcoming, pendingJoinCount, pendingApprovalsForViewer] =
     await Promise.all([
-      prisma.tournament.count(),
+      prisma.tournament.count({ where: visibilityWhere }),
       prisma.team.count(),
       prisma.player.count(),
       prisma.match.findMany({
-        where: { status: "LIVE" },
+        where: { status: "LIVE", ...matchVisibilityWhere },
         include: { homeTeam: true, awayTeam: true, tournament: true },
         take: 5
       }),
       prisma.match.findMany({
-        where: { status: "SCHEDULED" },
+        where: { status: "SCHEDULED", ...matchVisibilityWhere },
         orderBy: { scheduledAt: "asc" },
         include: { homeTeam: true, awayTeam: true, tournament: true },
         take: 5
       }),
-      prisma.joinRequest.count({ where: { status: "PENDING" } })
+      prisma.joinRequest.count({ where: { status: "PENDING" } }),
+      viewer.userId
+        ? prisma.tournament.count({
+            where: {
+              organizerId: viewer.userId,
+              approvalStatus: "PENDING"
+            }
+          })
+        : Promise.resolve(0)
     ]);
 
   return (
@@ -48,6 +84,15 @@ async function OrganizerDashboard({ firstName }: { firstName: string }) {
               <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
                 {pendingJoinCount} pending join request{pendingJoinCount > 1 ? "s" : ""}
               </span>
+            )}
+            {pendingApprovalsForViewer > 0 && (
+              <Link
+                href="/tournaments"
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 hover:bg-amber-200"
+                title="Awaiting admin approval"
+              >
+                {pendingApprovalsForViewer} tournament{pendingApprovalsForViewer > 1 ? "s" : ""} awaiting approval
+              </Link>
             )}
           </div>
           <h1 className="font-display text-2xl font-bold sm:text-3xl">
@@ -140,7 +185,17 @@ async function OrganizerDashboard({ firstName }: { firstName: string }) {
   );
 }
 
-async function PlayerDashboard({ userId, firstName }: { userId: string; firstName: string }) {
+async function PlayerDashboard({
+  viewer,
+  userId,
+  firstName
+}: {
+  viewer: ViewerContext;
+  userId: string;
+  firstName: string;
+}) {
+  const matchVisibilityWhere = matchTournamentVisibilityWhere(viewer);
+  const visibilityWhere = tournamentVisibilityWhere(viewer);
   // Find the player profile for this user.
   const myPlayer = await prisma.player.findFirst({
     where: { userId },
@@ -149,12 +204,12 @@ async function PlayerDashboard({ userId, firstName }: { userId: string; firstNam
 
   const [liveMatches, upcoming, myRequests, openTournaments] = await Promise.all([
     prisma.match.findMany({
-      where: { status: "LIVE" },
+      where: { status: "LIVE", ...matchVisibilityWhere },
       include: { homeTeam: true, awayTeam: true, tournament: true },
       take: 5
     }),
     prisma.match.findMany({
-      where: { status: "SCHEDULED" },
+      where: { status: "SCHEDULED", ...matchVisibilityWhere },
       orderBy: { scheduledAt: "asc" },
       include: { homeTeam: true, awayTeam: true, tournament: true },
       take: 5
@@ -167,7 +222,12 @@ async function PlayerDashboard({ userId, firstName }: { userId: string; firstNam
         })
       : Promise.resolve([] as never[]),
     prisma.tournament.findMany({
-      where: { status: { in: ["UPCOMING", "ONGOING"] } },
+      where: {
+        AND: [
+          visibilityWhere,
+          { status: { in: ["UPCOMING", "LIVE"] } }
+        ]
+      },
       orderBy: { startDate: "desc" },
       take: 6
     })

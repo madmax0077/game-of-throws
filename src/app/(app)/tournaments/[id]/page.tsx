@@ -4,7 +4,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { isPlayer } from "@/lib/roles";
+import { isAdmin, isPlayer } from "@/lib/roles";
+import { canViewTournament } from "@/lib/tournamentVisibility";
 import {
   computeSeriesPoints,
   pointsConfig,
@@ -60,6 +61,21 @@ export default async function TournamentDetailPage({
   });
 
   if (!tournament) notFound();
+
+  // Approval gate — strangers (and players who aren't admins) shouldn't be
+  // able to see pending or rejected tournaments even by guessing the URL.
+  const viewer = {
+    userId: session?.user?.id ?? null,
+    role: session?.user?.role ?? null
+  };
+  if (!canViewTournament(viewer, tournament)) notFound();
+
+  const viewerIsAdmin = isAdmin(viewer.role);
+  const viewerOwnsTournament =
+    !!viewer.userId && viewer.userId === tournament.organizerId;
+  const showApprovalBanner =
+    tournament.approvalStatus !== "APPROVED" &&
+    (viewerOwnsTournament || viewerIsAdmin);
 
   // For the player view: figure out their join state per team.
   // (We only fetch the data when actually viewing as a player.)
@@ -329,17 +345,59 @@ export default async function TournamentDetailPage({
 
   return (
     <div className="space-y-8">
+      {showApprovalBanner && tournament.approvalStatus === "PENDING" && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Pending admin approval</p>
+          <p className="mt-1 text-amber-800">
+            This tournament is only visible to you{viewerIsAdmin ? " and other admins" : ""}{" "}
+            until an admin approves it. You can keep adding teams and setting
+            things up in the meantime.
+            {viewerIsAdmin && (
+              <>
+                {" "}
+                Go to{" "}
+                <Link href="/admin" className="font-bold underline">
+                  the approvals queue
+                </Link>{" "}
+                to approve or reject it.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+      {showApprovalBanner && tournament.approvalStatus === "REJECTED" && (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900">
+          <p className="font-semibold">Rejected by admin</p>
+          <p className="mt-1 text-rose-800">
+            {tournament.rejectionReason
+              ? `Reason: ${tournament.rejectionReason}`
+              : "An admin rejected this tournament. It stays hidden from the public."}
+          </p>
+        </div>
+      )}
       <header className="card overflow-hidden p-0">
         <div className="bg-gradient-to-br from-brand-700 to-brand-900 p-8 text-white">
-          <span
-            className={
-              tournament.status === "LIVE"
-                ? "badge-live bg-white/20 text-white"
-                : "badge-upcoming bg-white/20 text-white"
-            }
-          >
-            {tournament.status}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={
+                tournament.status === "LIVE"
+                  ? "badge-live bg-white/20 text-white"
+                  : "badge-upcoming bg-white/20 text-white"
+              }
+            >
+              {tournament.status}
+            </span>
+            {tournament.approvalStatus === "PENDING" && showApprovalBanner && (
+              <span className="inline-flex items-center rounded-full bg-amber-400/95 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-900">
+                Pending approval
+              </span>
+            )}
+            {tournament.approvalStatus === "REJECTED" && showApprovalBanner && (
+              <span className="inline-flex items-center rounded-full bg-rose-500/95 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
+                Rejected
+              </span>
+            )}
+          </div>
           <h1 className="mt-3 font-display text-3xl font-extrabold">
             {tournament.name}
           </h1>

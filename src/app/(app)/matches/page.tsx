@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/utils";
+import {
+  getViewer,
+  matchTournamentVisibilityWhere
+} from "@/lib/tournamentVisibility";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
 export default async function MatchesPage() {
+  const viewer = await getViewer();
   const matches = await prisma.match.findMany({
+    where: matchTournamentVisibilityWhere(viewer),
     orderBy: [{ status: "asc" }, { scheduledAt: "asc" }],
     include: { homeTeam: true, awayTeam: true, tournament: true }
   });

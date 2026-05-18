@@ -22,8 +22,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tournaments Tournament[] @relation("OrganizerTournaments")
-  players     Player[]
+  tournaments         Tournament[] @relation("OrganizerTournaments")
+  approvedTournaments Tournament[] @relation("ApprovedTournaments")
+  players             Player[]
 }
 
 model Tournament {
@@ -37,16 +38,29 @@ model Tournament {
   endDate     DateTime
   bannerUrl   String?
   status      String   @default("UPCOMING") // UPCOMING | LIVE | COMPLETED
+  // Moderation: new tournaments are created with "PENDING" by the API and
+  // are only visible to the organizer who created them (and to admins)
+  // until an ADMIN marks them APPROVED. REJECTED tournaments stay hidden
+  // from the public but remain visible to their organizer + admins.
+  // Default kept as APPROVED so existing rows on schema migration remain
+  // visible — the create endpoint always sets PENDING for non-admins.
+  approvalStatus  String    @default("APPROVED") // PENDING | APPROVED | REJECTED
+  approvedAt      DateTime?
+  approvedById    String?
+  rejectionReason String?
   organizerId String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organizer User    @relation("OrganizerTournaments", fields: [organizerId], references: [id], onDelete: Cascade)
-  teams     Team[]
-  matches   Match[]
+  organizer  User  @relation("OrganizerTournaments", fields: [organizerId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("ApprovedTournaments", fields: [approvedById], references: [id], onDelete: SetNull)
+  teams      Team[]
+  matches    Match[]
 
   @@index([organizerId])
   @@index([status])
+  @@index([approvalStatus])
+  @@index([approvedById])
 }
 
 model Team {

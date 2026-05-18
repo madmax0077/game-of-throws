@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatOvers } from "@/lib/utils";
+import { canViewTournament, getViewer } from "@/lib/tournamentVisibility";
 import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import {
   buildInningsScorecard,
@@ -45,7 +46,14 @@ export default async function WatchMatchPage({
     include: {
       homeTeam: { include: { players: true } },
       awayTeam: { include: { players: true } },
-      tournament: { select: { id: true, name: true } },
+      tournament: {
+        select: {
+          id: true,
+          name: true,
+          approvalStatus: true,
+          organizerId: true
+        }
+      },
       innings: {
         orderBy: { number: "asc" },
         include: {
@@ -63,6 +71,12 @@ export default async function WatchMatchPage({
   });
 
   if (!match) notFound();
+
+  // Don't expose live scoring publicly for tournaments that aren't approved
+  // yet (or have been rejected). Owners / admins can still preview while
+  // signed in.
+  const viewer = await getViewer();
+  if (!canViewTournament(viewer, match.tournament)) notFound();
 
   // Per-team player lists for the full scorecard + MVP panel.
   const toScorecardPlayer = (p: {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, formatOvers } from "@/lib/utils";
+import { canViewTournament, getViewer } from "@/lib/tournamentVisibility";
 import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import {
   buildInningsScorecard,
@@ -40,6 +41,11 @@ export default async function MatchDetail({
     }
   });
   if (!match) notFound();
+
+  // Hide match detail for tournaments the viewer can't see (pending /
+  // rejected and they aren't the owner/admin).
+  const viewer = await getViewer();
+  if (!canViewTournament(viewer, match.tournament)) notFound();
 
   // Pre-compute scorecards for every innings so the page render is cheap.
   const toScorecardPlayer = (p: {
