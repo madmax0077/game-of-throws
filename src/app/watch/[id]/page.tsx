@@ -3,8 +3,16 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatOvers } from "@/lib/utils";
 import { ballPillColor, ballPillText } from "@/lib/ballLabel";
+import {
+  buildInningsScorecard,
+  computeMatchPoints,
+  type ScorecardBall,
+  type ScorecardPlayer
+} from "@/lib/scorecard";
 import { Logo } from "@/components/Logo";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
+import { MatchScorecard } from "@/components/MatchScorecard";
+import { MvpPanel } from "@/components/MvpPanel";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,8 +42,8 @@ export default async function WatchMatchPage({
   const match = await prisma.match.findUnique({
     where: { id: params.id },
     include: {
-      homeTeam: true,
-      awayTeam: true,
+      homeTeam: { include: { players: true } },
+      awayTeam: { include: { players: true } },
       tournament: { select: { id: true, name: true } },
       innings: {
         orderBy: { number: "asc" },
@@ -54,6 +62,93 @@ export default async function WatchMatchPage({
   });
 
   if (!match) notFound();
+
+  // Per-team player lists for the full scorecard + MVP panel.
+  const toScorecardPlayer = (p: {
+    id: string;
+    name: string;
+    role: string;
+    isCaptain: boolean;
+  }): ScorecardPlayer => ({
+    id: p.id,
+    name: p.name,
+    role: p.role,
+    isCaptain: p.isCaptain
+  });
+  const homePlayers = match.homeTeam.players.map(toScorecardPlayer);
+  const awayPlayers = match.awayTeam.players.map(toScorecardPlayer);
+
+  const inningsForCard = match.innings.map((inn) => {
+    const battingTeamId = inn.battingTeamId;
+    const battingPlayers =
+      battingTeamId === match.homeTeamId ? homePlayers : awayPlayers;
+    const bowlingPlayers =
+      battingTeamId === match.homeTeamId ? awayPlayers : homePlayers;
+    const bowlingTeamId =
+      battingTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
+
+    const ballsForCard: ScorecardBall[] = inn.balls.map((b) => ({
+      id: b.id,
+      strikerId: b.strikerId,
+      nonStrikerId: b.nonStrikerId,
+      bowlerId: b.bowlerId,
+      outBatterId: b.outBatterId,
+      fielderId: b.fielderId,
+      runs: b.runs,
+      extraType: b.extraType,
+      extraRuns: b.extraRuns ?? 0,
+      isWicket: b.isWicket,
+      wicketType: b.wicketType,
+      legal: b.legal,
+      overNumber: b.overNumber,
+      ballInOver: b.ballInOver
+    }));
+
+    return {
+      inningsNumber: inn.number,
+      totalRuns: inn.totalRuns,
+      totalWickets: inn.totalWickets,
+      totalBalls: inn.totalBalls,
+      isClosed: inn.isClosed,
+      isSuperOver: inn.isSuperOver,
+      scorecard: buildInningsScorecard(
+        ballsForCard,
+        battingTeamId,
+        bowlingTeamId,
+        battingPlayers,
+        bowlingPlayers
+      )
+    };
+  });
+
+  const allBallsForPoints: ScorecardBall[] = match.innings.flatMap((inn) =>
+    inn.balls.map((b) => ({
+      id: b.id,
+      strikerId: b.strikerId,
+      nonStrikerId: b.nonStrikerId,
+      bowlerId: b.bowlerId,
+      outBatterId: b.outBatterId,
+      fielderId: b.fielderId,
+      runs: b.runs,
+      extraType: b.extraType,
+      extraRuns: b.extraRuns ?? 0,
+      isWicket: b.isWicket,
+      wicketType: b.wicketType,
+      legal: b.legal,
+      overNumber: b.overNumber,
+      ballInOver: b.ballInOver
+    }))
+  );
+  const teamIdByPlayerId = new Map<string, string>();
+  for (const p of match.homeTeam.players)
+    teamIdByPlayerId.set(p.id, match.homeTeamId);
+  for (const p of match.awayTeam.players)
+    teamIdByPlayerId.set(p.id, match.awayTeamId);
+  const matchPoints = computeMatchPoints(
+    allBallsForPoints,
+    [...homePlayers, ...awayPlayers],
+    teamIdByPlayerId
+  );
 
   const currentInnings =
     match.innings.find((i) => !i.isClosed) ?? match.innings.at(-1);
@@ -292,6 +387,38 @@ export default async function WatchMatchPage({
               }
             />
           </section>
+        )}
+
+        {/* Full team-tabbed scorecard */}
+        {inningsForCard.length > 0 && (
+          <MatchScorecard
+            homeTeam={{
+              id: match.homeTeamId,
+              name: match.homeTeam.name,
+              shortName: match.homeTeam.shortName
+            }}
+            awayTeam={{
+              id: match.awayTeamId,
+              name: match.awayTeam.name,
+              shortName: match.awayTeam.shortName
+            }}
+            innings={inningsForCard}
+          />
+        )}
+
+        {/* MVP + per-player points (visible after the match completes) */}
+        {isCompleted && (
+          <MvpPanel
+            rows={matchPoints}
+            homeTeam={{
+              id: match.homeTeamId,
+              shortName: match.homeTeam.shortName
+            }}
+            awayTeam={{
+              id: match.awayTeamId,
+              shortName: match.awayTeam.shortName
+            }}
+          />
         )}
 
         {/* Innings breakdown */}

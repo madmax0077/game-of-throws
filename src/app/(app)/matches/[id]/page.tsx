@@ -3,8 +3,16 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, formatOvers } from "@/lib/utils";
 import { ballPillColor, ballPillText } from "@/lib/ballLabel";
+import {
+  buildInningsScorecard,
+  computeMatchPoints,
+  type ScorecardBall,
+  type ScorecardPlayer
+} from "@/lib/scorecard";
 import { ShareWatchLink } from "@/components/ShareWatchLink";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
+import { MatchScorecard } from "@/components/MatchScorecard";
+import { MvpPanel } from "@/components/MvpPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -16,22 +24,118 @@ export default async function MatchDetail({
   const match = await prisma.match.findUnique({
     where: { id: params.id },
     include: {
-      homeTeam: true,
-      awayTeam: true,
+      homeTeam: { include: { players: true } },
+      awayTeam: { include: { players: true } },
       tournament: true,
       innings: {
         orderBy: { number: "asc" },
         include: {
           balls: {
-            orderBy: { createdAt: "desc" },
-            take: 12,
-            include: { striker: true, bowler: true }
+            // Chronological order so per-batter "first seen" → batting order.
+            orderBy: { createdAt: "asc" }
           }
         }
       }
     }
   });
   if (!match) notFound();
+
+  // Pre-compute scorecards for every innings so the page render is cheap.
+  const toScorecardPlayer = (p: {
+    id: string;
+    name: string;
+    role: string;
+    isCaptain: boolean;
+  }): ScorecardPlayer => ({
+    id: p.id,
+    name: p.name,
+    role: p.role,
+    isCaptain: p.isCaptain
+  });
+  const homePlayers = match.homeTeam.players.map(toScorecardPlayer);
+  const awayPlayers = match.awayTeam.players.map(toScorecardPlayer);
+
+  const inningsForCard = match.innings.map((inn) => {
+    const battingTeamId = inn.battingTeamId;
+    const battingPlayers =
+      battingTeamId === match.homeTeamId ? homePlayers : awayPlayers;
+    const bowlingPlayers =
+      battingTeamId === match.homeTeamId ? awayPlayers : homePlayers;
+    const bowlingTeamId =
+      battingTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
+
+    const ballsForCard: ScorecardBall[] = inn.balls.map((b) => ({
+      id: b.id,
+      strikerId: b.strikerId,
+      nonStrikerId: b.nonStrikerId,
+      bowlerId: b.bowlerId,
+      outBatterId: b.outBatterId,
+      fielderId: b.fielderId,
+      runs: b.runs,
+      extraType: b.extraType,
+      extraRuns: b.extraRuns ?? 0,
+      isWicket: b.isWicket,
+      wicketType: b.wicketType,
+      legal: b.legal,
+      overNumber: b.overNumber,
+      ballInOver: b.ballInOver
+    }));
+
+    return {
+      inningsNumber: inn.number,
+      totalRuns: inn.totalRuns,
+      totalWickets: inn.totalWickets,
+      totalBalls: inn.totalBalls,
+      isClosed: inn.isClosed,
+      isSuperOver: inn.isSuperOver,
+      scorecard: buildInningsScorecard(
+        ballsForCard,
+        battingTeamId,
+        bowlingTeamId,
+        battingPlayers,
+        bowlingPlayers
+      )
+    };
+  });
+
+  // Last 12 balls (most recent first) for the "Recent balls" pill row.
+  // We re-fetch from the already-loaded innings to avoid another query.
+  const recentByInnings = match.innings.map((inn) => ({
+    number: inn.number,
+    totalRuns: inn.totalRuns,
+    totalWickets: inn.totalWickets,
+    totalBalls: inn.totalBalls,
+    balls: inn.balls.slice(-12)
+  }));
+
+  // Per-player match points (used for the MVP panel on completed matches).
+  const allBallsForPoints: ScorecardBall[] = match.innings.flatMap((inn) =>
+    inn.balls.map((b) => ({
+      id: b.id,
+      strikerId: b.strikerId,
+      nonStrikerId: b.nonStrikerId,
+      bowlerId: b.bowlerId,
+      outBatterId: b.outBatterId,
+      fielderId: b.fielderId,
+      runs: b.runs,
+      extraType: b.extraType,
+      extraRuns: b.extraRuns ?? 0,
+      isWicket: b.isWicket,
+      wicketType: b.wicketType,
+      legal: b.legal,
+      overNumber: b.overNumber,
+      ballInOver: b.ballInOver
+    }))
+  );
+  const allPlayers = [...homePlayers, ...awayPlayers];
+  const teamIdByPlayerId = new Map<string, string>();
+  for (const p of match.homeTeam.players) teamIdByPlayerId.set(p.id, match.homeTeamId);
+  for (const p of match.awayTeam.players) teamIdByPlayerId.set(p.id, match.awayTeamId);
+  const matchPoints = computeMatchPoints(
+    allBallsForPoints,
+    allPlayers,
+    teamIdByPlayerId
+  );
 
   return (
     <div className="space-y-6">
@@ -104,11 +208,11 @@ export default async function MatchDetail({
 
       <section className="card p-6">
         <h2 className="font-display text-lg font-bold">Recent balls</h2>
-        {match.innings.length === 0 ? (
+        {recentByInnings.length === 0 ? (
           <p className="mt-2 text-sm text-ink-500">No innings started yet.</p>
         ) : (
-          match.innings.map((inn) => (
-            <div key={inn.id} className="mt-4">
+          recentByInnings.map((inn) => (
+            <div key={inn.number} className="mt-4">
               <p className="text-sm font-semibold">
                 Innings {inn.number} — {inn.totalRuns}/{inn.totalWickets} ({formatOvers(inn.totalBalls)} ov)
               </p>
@@ -132,6 +236,30 @@ export default async function MatchDetail({
           ))
         )}
       </section>
+
+      {inningsForCard.length > 0 && (
+        <MatchScorecard
+          homeTeam={{
+            id: match.homeTeamId,
+            name: match.homeTeam.name,
+            shortName: match.homeTeam.shortName
+          }}
+          awayTeam={{
+            id: match.awayTeamId,
+            name: match.awayTeam.name,
+            shortName: match.awayTeam.shortName
+          }}
+          innings={inningsForCard}
+        />
+      )}
+
+      {match.status === "COMPLETED" && (
+        <MvpPanel
+          rows={matchPoints}
+          homeTeam={{ id: match.homeTeamId, shortName: match.homeTeam.shortName }}
+          awayTeam={{ id: match.awayTeamId, shortName: match.awayTeam.shortName }}
+        />
+      )}
 
       {/* Auto-refresh the scoreboard while the match is live so spectators
           see new balls without manually reloading. */}
