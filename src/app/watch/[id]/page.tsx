@@ -6,6 +6,7 @@ import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import {
   buildInningsScorecard,
   computeMatchPoints,
+  pointsConfig,
   type ScorecardBall,
   type ScorecardPlayer
 } from "@/lib/scorecard";
@@ -144,10 +145,12 @@ export default async function WatchMatchPage({
     teamIdByPlayerId.set(p.id, match.homeTeamId);
   for (const p of match.awayTeam.players)
     teamIdByPlayerId.set(p.id, match.awayTeamId);
+  const pointsCfg = pointsConfig(match.overs);
   const matchPoints = computeMatchPoints(
     allBallsForPoints,
     [...homePlayers, ...awayPlayers],
-    teamIdByPlayerId
+    teamIdByPlayerId,
+    pointsCfg
   );
 
   const currentInnings =
@@ -411,6 +414,7 @@ export default async function WatchMatchPage({
         {isCompleted && (
           <MvpPanel
             rows={matchPoints}
+            config={pointsCfg}
             homeTeam={{
               id: match.homeTeamId,
               shortName: match.homeTeam.shortName

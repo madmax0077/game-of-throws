@@ -1,16 +1,24 @@
-import type { MatchPlayerPoints } from "@/lib/scorecard";
+import type { MatchPlayerPoints, PointsConfig } from "@/lib/scorecard";
 
 type TeamInfo = {
   id: string;
   shortName: string;
 };
 
+function formatLabelText(label: PointsConfig["formatLabel"], overs: number) {
+  if (label === "very-short") return `${overs}-over (short format)`;
+  if (label === "short") return `${overs}-over`;
+  return `${overs}-over T20`;
+}
+
 export function MvpPanel({
   rows,
+  config,
   homeTeam,
   awayTeam
 }: {
   rows: MatchPlayerPoints[];
+  config: PointsConfig;
   homeTeam: TeamInfo;
   awayTeam: TeamInfo;
 }) {
@@ -30,13 +38,26 @@ export function MvpPanel({
       <header className="border-b border-ink-100 p-5">
         <h2 className="font-display text-lg font-bold">Player of the match</h2>
         <p className="mt-1 text-xs text-ink-500">
-          Points use the standard Dream11 T20 cricket scoring system —{" "}
-          <span className="font-semibold">+1</span> per run,{" "}
-          <span className="font-semibold">+4/+8/+16</span> for 30/50/100,{" "}
-          <span className="font-semibold">+25</span> per wicket,{" "}
-          <span className="font-semibold">+12</span> per maiden / run-out /
-          stumping, <span className="font-semibold">+8</span> per catch, with
-          economy and duck adjustments.
+          Points scaled to a{" "}
+          <span className="font-semibold">
+            {formatLabelText(config.formatLabel, config.matchOvers)}
+          </span>{" "}
+          match — <span className="font-semibold">+1</span> per run, milestone
+          bonuses{" "}
+          <span className="font-semibold">
+            +4/+8/+16
+          </span>{" "}
+          at{" "}
+          <span className="font-semibold">
+            {config.bat.milestones.map((m) => m.atRuns).join("/")}
+          </span>{" "}
+          runs, <span className="font-semibold">+{config.bowl.perWicket}</span>{" "}
+          per wicket,{" "}
+          <span className="font-semibold">+{config.bowl.perMaiden}</span> per
+          maiden, <span className="font-semibold">+{config.field.perCatch}</span>{" "}
+          per catch,{" "}
+          <span className="font-semibold">+{config.field.perRunOut}</span> per
+          run-out / stumping, plus economy and duck adjustments.
         </p>
       </header>
 

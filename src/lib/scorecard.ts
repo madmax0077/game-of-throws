@@ -328,48 +328,170 @@ export function buildInningsScorecard(
 
 // ---------- MVP / per-player match points ----------
 //
-// We use the widely-recognised Dream11 T20 fantasy scoring system. It's the
-// closest thing to a "standard" cricket player rating that most fans
-// recognise. The formula adds up batting, bowling and fielding contributions
-// with milestone and economy bonuses, so all-rounders and impact players
-// don't lose out to a single top scorer. Each match is scored independently
-// (milestones reset per match).
+// We use a Dream11 T20-style fantasy scoring system, but scaled to the
+// length of the match. In a 20-over T20 a wicket is +25; in a 6-over
+// match wickets are scarce and short knocks are decisive, so the same
+// +25 would dominate everything. Three presets cover the common formats:
+//
+//   • ≤ 8 overs  — "very short" (typical scratch / 6-over games)
+//   • 9–12 overs — "short"      (T10-ish)
+//   • ≥ 13 overs — "T20"        (standard Dream11 values)
+//
+// Milestone thresholds also shrink in shorter formats so a 15-run knock
+// can earn the first milestone bonus in a 6-over match.
 
-export const POINTS = {
+export type PointsConfig = {
   bat: {
-    perRun: 1,
-    per4Bonus: 1, // on top of the +1 already from the run itself
-    per6Bonus: 2,
-    milestone30: 4,
-    milestone50: 8,
-    milestone100: 16,
-    duckPenalty: -2 // batter (not pure bowler) dismissed for 0
-  },
+    perRun: number;
+    per4Bonus: number;
+    per6Bonus: number;
+    milestones: Array<{ atRuns: number; bonus: number }>; // applied as highest reached
+    duckPenalty: number;
+  };
   bowl: {
-    perWicket: 25, // excludes RUN_OUT (credited to fielder)
-    perBowledOrLBW: 8, // bonus on top of the +25
-    haul3: 4,
-    haul4: 8,
-    haul5: 16,
-    perMaiden: 12,
-    economyMinOvers: 2,
-    economyBands: [
-      { max: 5, points: 6 },
-      { max: 6, points: 4 },
-      { max: 7, points: 2 },
-      { max: 10, points: 0 },
-      { max: 11, points: -2 },
-      { max: 12, points: -4 },
-      { max: Infinity, points: -6 }
-    ]
-  },
+    perWicket: number;
+    perBowledOrLBW: number;
+    hauls: Array<{ atWickets: number; bonus: number }>; // applied as highest reached
+    perMaiden: number;
+    economyMinOvers: number;
+    economyBands: Array<{ max: number; points: number }>;
+  };
   field: {
-    perCatch: 8,
-    threeCatchBonus: 4,
-    perStumping: 12,
-    perRunOut: 12
+    perCatch: number;
+    threeCatchBonus: number;
+    perStumping: number;
+    perRunOut: number;
+  };
+  matchOvers: number;
+  formatLabel: "very-short" | "short" | "t20";
+};
+
+// Default economy bands — broadly format-agnostic since per-over scoring
+// rates don't vary as much as raw point totals do.
+const ECONOMY_BANDS = [
+  { max: 5, points: 6 },
+  { max: 6, points: 4 },
+  { max: 7, points: 2 },
+  { max: 10, points: 0 },
+  { max: 11, points: -2 },
+  { max: 12, points: -4 },
+  { max: Infinity, points: -6 }
+] as const;
+
+export function pointsConfig(matchOvers: number): PointsConfig {
+  if (matchOvers <= 8) {
+    // Very short (≤ 8 overs): wickets are sparse, scores low, every catch
+    // really matters but is worth less in absolute terms than in T20.
+    return {
+      bat: {
+        perRun: 1,
+        per4Bonus: 1,
+        per6Bonus: 2,
+        milestones: [
+          { atRuns: 15, bonus: 4 },
+          { atRuns: 25, bonus: 8 },
+          { atRuns: 40, bonus: 16 }
+        ],
+        duckPenalty: -1
+      },
+      bowl: {
+        perWicket: 10,
+        perBowledOrLBW: 3,
+        hauls: [
+          { atWickets: 2, bonus: 4 },
+          { atWickets: 3, bonus: 8 },
+          { atWickets: 4, bonus: 16 }
+        ],
+        perMaiden: 5,
+        economyMinOvers: 1,
+        economyBands: [...ECONOMY_BANDS]
+      },
+      field: {
+        perCatch: 3,
+        threeCatchBonus: 4,
+        perStumping: 5,
+        perRunOut: 5
+      },
+      matchOvers,
+      formatLabel: "very-short"
+    };
   }
-} as const;
+
+  if (matchOvers <= 12) {
+    // Short formats (T10-ish): mid-way between very-short and T20.
+    return {
+      bat: {
+        perRun: 1,
+        per4Bonus: 1,
+        per6Bonus: 2,
+        milestones: [
+          { atRuns: 20, bonus: 4 },
+          { atRuns: 35, bonus: 8 },
+          { atRuns: 60, bonus: 16 }
+        ],
+        duckPenalty: -2
+      },
+      bowl: {
+        perWicket: 15,
+        perBowledOrLBW: 5,
+        hauls: [
+          { atWickets: 2, bonus: 4 },
+          { atWickets: 3, bonus: 8 },
+          { atWickets: 4, bonus: 16 }
+        ],
+        perMaiden: 8,
+        economyMinOvers: 1,
+        economyBands: [...ECONOMY_BANDS]
+      },
+      field: {
+        perCatch: 5,
+        threeCatchBonus: 4,
+        perStumping: 8,
+        perRunOut: 8
+      },
+      matchOvers,
+      formatLabel: "short"
+    };
+  }
+
+  // 13+ overs → classic T20 Dream11 values.
+  return {
+    bat: {
+      perRun: 1,
+      per4Bonus: 1,
+      per6Bonus: 2,
+      milestones: [
+        { atRuns: 30, bonus: 4 },
+        { atRuns: 50, bonus: 8 },
+        { atRuns: 100, bonus: 16 }
+      ],
+      duckPenalty: -2
+    },
+    bowl: {
+      perWicket: 25,
+      perBowledOrLBW: 8,
+      hauls: [
+        { atWickets: 3, bonus: 4 },
+        { atWickets: 4, bonus: 8 },
+        { atWickets: 5, bonus: 16 }
+      ],
+      perMaiden: 12,
+      economyMinOvers: 2,
+      economyBands: [...ECONOMY_BANDS]
+    },
+    field: {
+      perCatch: 8,
+      threeCatchBonus: 4,
+      perStumping: 12,
+      perRunOut: 12
+    },
+    matchOvers,
+    formatLabel: "t20"
+  };
+}
+
+// Back-compat default kept for any callers that haven't migrated yet.
+export const POINTS = pointsConfig(20);
 
 export type MatchPointsBreakdown = {
   batting: number;
@@ -398,29 +520,49 @@ export type MatchPlayerPoints = {
   participated: boolean;
 };
 
-function economyPoints(runsConceded: number, legalBalls: number): number {
+function economyPoints(
+  runsConceded: number,
+  legalBalls: number,
+  cfg: PointsConfig
+): number {
   const overs = legalBalls / 6;
-  if (overs < POINTS.bowl.economyMinOvers) return 0;
+  if (overs < cfg.bowl.economyMinOvers) return 0;
   const econ = overs > 0 ? runsConceded / overs : 0;
-  for (const band of POINTS.bowl.economyBands) {
+  for (const band of cfg.bowl.economyBands) {
     if (econ < band.max) return band.points;
   }
   return 0;
 }
 
-function milestonePoints(runs: number, ballsFaced: number): number {
-  // Milestones only apply if the batter actually faced a ball.
+function milestonePoints(
+  runs: number,
+  ballsFaced: number,
+  cfg: PointsConfig
+): number {
+  // Milestones only apply if the batter actually faced a ball. Pick the
+  // highest milestone reached (they don't stack).
   if (ballsFaced === 0) return 0;
-  if (runs >= 100) return POINTS.bat.milestone100;
-  if (runs >= 50) return POINTS.bat.milestone50;
-  if (runs >= 30) return POINTS.bat.milestone30;
-  return 0;
+  let bonus = 0;
+  for (const m of cfg.bat.milestones) {
+    if (runs >= m.atRuns) bonus = m.bonus;
+  }
+  return bonus;
+}
+
+function haulPoints(wickets: number, cfg: PointsConfig): number {
+  // Pick the highest haul tier reached (no stacking).
+  let bonus = 0;
+  for (const h of cfg.bowl.hauls) {
+    if (wickets >= h.atWickets) bonus = h.bonus;
+  }
+  return bonus;
 }
 
 export function computeMatchPoints(
   balls: ScorecardBall[],
   players: ScorecardPlayer[],
-  teamIdByPlayerId: Map<string, string>
+  teamIdByPlayerId: Map<string, string>,
+  cfg: PointsConfig = pointsConfig(20)
 ): MatchPlayerPoints[] {
   const playerById = new Map(players.map((p) => [p.id, p]));
   type Acc = {
@@ -541,27 +683,25 @@ export function computeMatchPoints(
 
     // Batting points
     let batPts =
-      runs * POINTS.bat.perRun +
-      fours * POINTS.bat.per4Bonus +
-      sixes * POINTS.bat.per6Bonus +
-      milestonePoints(runs, ballsFaced);
-    if (isDuck) batPts += POINTS.bat.duckPenalty;
+      runs * cfg.bat.perRun +
+      fours * cfg.bat.per4Bonus +
+      sixes * cfg.bat.per6Bonus +
+      milestonePoints(runs, ballsFaced, cfg);
+    if (isDuck) batPts += cfg.bat.duckPenalty;
 
     // Bowling points
-    let bowlPts = wickets * POINTS.bowl.perWicket;
-    bowlPts += bowledOrLbw * POINTS.bowl.perBowledOrLBW;
-    if (wickets >= 5) bowlPts += POINTS.bowl.haul5;
-    else if (wickets >= 4) bowlPts += POINTS.bowl.haul4;
-    else if (wickets >= 3) bowlPts += POINTS.bowl.haul3;
-    bowlPts += maidens * POINTS.bowl.perMaiden;
-    bowlPts += economyPoints(runsConceded, legalBallsBowled);
+    let bowlPts = wickets * cfg.bowl.perWicket;
+    bowlPts += bowledOrLbw * cfg.bowl.perBowledOrLBW;
+    bowlPts += haulPoints(wickets, cfg);
+    bowlPts += maidens * cfg.bowl.perMaiden;
+    bowlPts += economyPoints(runsConceded, legalBallsBowled, cfg);
 
     // Fielding points
     let fieldPts =
-      catches * POINTS.field.perCatch +
-      stumpings * POINTS.field.perStumping +
-      runOuts * POINTS.field.perRunOut;
-    if (catches >= 3) fieldPts += POINTS.field.threeCatchBonus;
+      catches * cfg.field.perCatch +
+      stumpings * cfg.field.perStumping +
+      runOuts * cfg.field.perRunOut;
+    if (catches >= 3) fieldPts += cfg.field.threeCatchBonus;
 
     const points = batPts + bowlPts + fieldPts;
 

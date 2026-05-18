@@ -6,6 +6,7 @@ import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import {
   buildInningsScorecard,
   computeMatchPoints,
+  pointsConfig,
   type ScorecardBall,
   type ScorecardPlayer
 } from "@/lib/scorecard";
@@ -131,10 +132,14 @@ export default async function MatchDetail({
   const teamIdByPlayerId = new Map<string, string>();
   for (const p of match.homeTeam.players) teamIdByPlayerId.set(p.id, match.homeTeamId);
   for (const p of match.awayTeam.players) teamIdByPlayerId.set(p.id, match.awayTeamId);
+  // Scale points to the match length so a 6-over game doesn't see one
+  // wicket dominate the MVP table.
+  const pointsCfg = pointsConfig(match.overs);
   const matchPoints = computeMatchPoints(
     allBallsForPoints,
     allPlayers,
-    teamIdByPlayerId
+    teamIdByPlayerId,
+    pointsCfg
   );
 
   return (
@@ -257,6 +262,7 @@ export default async function MatchDetail({
       {match.status === "COMPLETED" && (
         <MvpPanel
           rows={matchPoints}
+          config={pointsCfg}
           homeTeam={{ id: match.homeTeamId, shortName: match.homeTeam.shortName }}
           awayTeam={{ id: match.awayTeamId, shortName: match.awayTeam.shortName }}
         />
