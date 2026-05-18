@@ -2,22 +2,26 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
- * Game of Throws — brand badge.
+ * Game of Throws — brand badge ("Royal Crest" edition).
  *
- * A premium IPL-style cricket badge, but elevated for our brand:
- *   - shield silhouette in our brand red gradient
- *   - gold royal crown at the top (nod to "Throws"/"Thrones")
- *   - crossed cricket bats with a cricket ball at the centre
- *   - inner gold border ring for a championship feel
+ * A bold heraldic crest designed to sit confidently on the brand-red app
+ * backgrounds:
  *
- * The wordmark beside the badge is "Game of Throws" with "Throws" in the
- * brand red to keep the same look as the existing site.
+ *   - deep onyx-navy shield (massive contrast against red & white)
+ *   - thick gold border + thin gold inner railing for a championship coin feel
+ *   - dominant gold royal crown with cream pearls and a red ruby jewel
+ *   - vertical gold cricket bat down the centre (the "scepter")
+ *   - ivory cricket ball at the foot with brand-red stitching
+ *   - flanking gold stars + a fanned gold ribbon for a regal accent
+ *
+ * The wordmark beside the badge keeps the existing site styling: "Game of"
+ * in ink, "Throws" in brand red (or amber when on dark/red surfaces).
  */
 export function Logo({
   className,
   variant = "dark",
   badgeOnly = false,
-  badgeSize = 36
+  badgeSize = 40
 }: {
   className?: string;
   variant?: "dark" | "light";
@@ -44,178 +48,250 @@ export function Logo({
   );
 }
 
-function Badge({ size = 36 }: { size?: number }) {
-  // Unique IDs so multiple instances on the page don't share gradients.
-  // (SVG `defs` ids are document-global.)
-  const uid = "got-logo";
+function Badge({ size = 40 }: { size?: number }) {
+  // Stable, unique gradient ids so multiple badges on a page don't collide.
+  const uid = "got-crest";
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 64 64"
+      viewBox="0 0 80 80"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label="Game of Throws"
       role="img"
-      className="drop-shadow-sm"
+      className="drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)]"
     >
       <defs>
-        <linearGradient id={`${uid}-red`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#e51d1d" />
-          <stop offset="55%" stopColor="#c1272d" />
-          <stop offset="100%" stopColor="#7a1418" />
+        {/* Deep onyx-navy shield gradient — sits beautifully on red AND white */}
+        <linearGradient id={`${uid}-onyx`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22244a" />
+          <stop offset="55%" stopColor="#0d0e25" />
+          <stop offset="100%" stopColor="#03030c" />
         </linearGradient>
+        {/* Rich gold gradient — high-shine, three-stop for depth */}
         <linearGradient id={`${uid}-gold`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#fff0b8" />
-          <stop offset="45%" stopColor="#f5b73c" />
-          <stop offset="100%" stopColor="#a66c1c" />
+          <stop offset="0%" stopColor="#fff2b2" />
+          <stop offset="35%" stopColor="#f6c64a" />
+          <stop offset="65%" stopColor="#d28e1e" />
+          <stop offset="100%" stopColor="#8a5410" />
         </linearGradient>
+        {/* Subtle highlight that gives the shield a 3D feel */}
         <radialGradient
-          id={`${uid}-glow`}
+          id={`${uid}-shine`}
           cx="50%"
-          cy="38%"
-          r="60%"
+          cy="32%"
+          r="55%"
           fx="50%"
-          fy="38%"
+          fy="32%"
         >
-          <stop offset="0%" stopColor="#ff8a8a" stopOpacity="0.55" />
-          <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+          <stop offset="0%" stopColor="#7a7eb5" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#000" stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      {/* Shield body */}
+      {/* === SHIELD === */}
       <path
-        d="M32 4 L57 11 L57 31 C57 47 47 56 32 60 C17 56 7 47 7 31 L7 11 Z"
-        fill={`url(#${uid}-red)`}
+        d="M40 4 L71 12 L71 36 C71 56 58 70 40 76 C22 70 9 56 9 36 L9 12 Z"
+        fill={`url(#${uid}-onyx)`}
       />
-      {/* Subtle inner highlight to give the shield depth */}
       <path
-        d="M32 4 L57 11 L57 31 C57 47 47 56 32 60 C17 56 7 47 7 31 L7 11 Z"
-        fill={`url(#${uid}-glow)`}
+        d="M40 4 L71 12 L71 36 C71 56 58 70 40 76 C22 70 9 56 9 36 L9 12 Z"
+        fill={`url(#${uid}-shine)`}
       />
-      {/* Gold border ring */}
+      {/* Thick gold border */}
       <path
-        d="M32 4 L57 11 L57 31 C57 47 47 56 32 60 C17 56 7 47 7 31 L7 11 Z"
+        d="M40 4 L71 12 L71 36 C71 56 58 70 40 76 C22 70 9 56 9 36 L9 12 Z"
         fill="none"
         stroke={`url(#${uid}-gold)`}
-        strokeWidth="1.6"
+        strokeWidth="2.2"
       />
-      {/* Inner thin outline for the championship feel */}
+      {/* Thin inner railing */}
       <path
-        d="M32 8 L53 14 L53 31 C53 44 45 52 32 56 C19 52 11 44 11 31 L11 14 Z"
+        d="M40 8 L67 15 L67 36 C67 53 56 65 40 71 C24 65 13 53 13 36 L13 15 Z"
         fill="none"
-        stroke="rgba(255,255,255,0.15)"
-        strokeWidth="0.8"
+        stroke={`url(#${uid}-gold)`}
+        strokeWidth="0.7"
+        opacity="0.7"
       />
 
-      {/* Royal crown at the top — the "Throws/Thrones" nod */}
-      <g transform="translate(32 9)">
+      {/* === CROWN — the dominant element === */}
+      <g transform="translate(40 26)">
+        {/* Crown body — five tall points */}
         <path
-          d="M-8 0 L-5 -4 L-2 1 L0 -6 L2 1 L5 -4 L8 0 L8 3 L-8 3 Z"
+          d="M-15 2 L-11 -8 L-7 0 L-3 -12 L0 0 L3 -12 L7 0 L11 -8 L15 2 Z"
           fill={`url(#${uid}-gold)`}
-          stroke="#6b3f10"
-          strokeWidth="0.4"
+          stroke="#4b2c08"
+          strokeWidth="0.5"
           strokeLinejoin="round"
         />
-        <circle cx="-5" cy="-4" r="0.9" fill="#fff" />
-        <circle cx="0" cy="-6" r="1.1" fill="#fff" />
-        <circle cx="5" cy="-4" r="0.9" fill="#fff" />
+        {/* Base band */}
+        <rect
+          x="-15"
+          y="2"
+          width="30"
+          height="5.5"
+          rx="0.8"
+          fill={`url(#${uid}-gold)`}
+          stroke="#4b2c08"
+          strokeWidth="0.5"
+        />
+        {/* Band decoration line */}
+        <rect
+          x="-13.5"
+          y="4.2"
+          width="27"
+          height="0.8"
+          fill="#4b2c08"
+          opacity="0.6"
+        />
+        {/* Pearl on each outer point */}
+        <circle
+          cx="-11"
+          cy="-8"
+          r="1.5"
+          fill="#fff8e3"
+          stroke="#4b2c08"
+          strokeWidth="0.4"
+        />
+        <circle
+          cx="11"
+          cy="-8"
+          r="1.5"
+          fill="#fff8e3"
+          stroke="#4b2c08"
+          strokeWidth="0.4"
+        />
+        {/* Pearl on each inner peak */}
+        <circle
+          cx="-7"
+          cy="0"
+          r="1.1"
+          fill="#fff8e3"
+          stroke="#4b2c08"
+          strokeWidth="0.3"
+        />
+        <circle
+          cx="7"
+          cy="0"
+          r="1.1"
+          fill="#fff8e3"
+          stroke="#4b2c08"
+          strokeWidth="0.3"
+        />
+        {/* Centre ruby on the tallest point */}
+        <circle
+          cx="0"
+          cy="-12"
+          r="2"
+          fill="#e51d1d"
+          stroke="#4b2c08"
+          strokeWidth="0.4"
+        />
+        <circle cx="-0.6" cy="-12.6" r="0.6" fill="#ffd0d0" opacity="0.8" />
+        {/* Centre gem in the band */}
+        <circle
+          cx="0"
+          cy="5"
+          r="1.4"
+          fill="#e51d1d"
+          stroke="#4b2c08"
+          strokeWidth="0.3"
+        />
       </g>
 
-      {/* Crossed cricket bats, X pattern, centred below the crown */}
-      <g transform="translate(32 36)">
-        <g transform="rotate(-32)">
-          <rect
-            x="-2.2"
-            y="-14"
-            width="4.4"
-            height="22"
-            rx="1.6"
-            fill={`url(#${uid}-gold)`}
-            stroke="#5b3a10"
-            strokeWidth="0.3"
-          />
-          {/* Bat handle */}
-          <rect
-            x="-1.1"
-            y="-18"
-            width="2.2"
-            height="6"
-            rx="1"
-            fill="#1a1108"
-          />
-          {/* Handle grip stripe */}
-          <rect x="-1.1" y="-15.5" width="2.2" height="0.6" fill="#3b2812" />
-        </g>
-        <g transform="rotate(32)">
-          <rect
-            x="-2.2"
-            y="-14"
-            width="4.4"
-            height="22"
-            rx="1.6"
-            fill={`url(#${uid}-gold)`}
-            stroke="#5b3a10"
-            strokeWidth="0.3"
-          />
-          <rect
-            x="-1.1"
-            y="-18"
-            width="2.2"
-            height="6"
-            rx="1"
-            fill="#1a1108"
-          />
-          <rect x="-1.1" y="-15.5" width="2.2" height="0.6" fill="#3b2812" />
-        </g>
+      {/* === SCEPTER / CRICKET BAT down the centre === */}
+      <g transform="translate(40 50)">
+        {/* Blade */}
+        <rect
+          x="-3"
+          y="-10"
+          width="6"
+          height="20"
+          rx="2"
+          fill={`url(#${uid}-gold)`}
+          stroke="#4b2c08"
+          strokeWidth="0.5"
+        />
+        {/* Highlight stripe on blade */}
+        <rect
+          x="-2.4"
+          y="-9"
+          width="1.2"
+          height="17"
+          rx="0.6"
+          fill="#fff4c8"
+          opacity="0.55"
+        />
+        {/* Grip / handle */}
+        <rect
+          x="-1.4"
+          y="-14"
+          width="2.8"
+          height="5.5"
+          rx="0.8"
+          fill="#1a0f04"
+        />
+        {/* Grip rings */}
+        <rect x="-1.4" y="-12.5" width="2.8" height="0.4" fill="#5b3a10" />
+        <rect x="-1.4" y="-11" width="2.8" height="0.4" fill="#5b3a10" />
+        {/* Pommel */}
+        <circle cx="0" cy="-15" r="1.1" fill={`url(#${uid}-gold)`} stroke="#4b2c08" strokeWidth="0.3" />
       </g>
 
-      {/* Cricket ball at the centre */}
-      <g transform="translate(32 36)">
-        <circle r="5" fill="#ffffff" />
-        <circle r="5" fill="none" stroke={`url(#${uid}-gold)`} strokeWidth="0.6" />
-        {/* Seam (two arcs) */}
+      {/* === CRICKET BALL at the foot, brand-red seam === */}
+      <g transform="translate(40 62)">
+        <circle r="4.2" fill="#fdf6e3" />
+        <circle
+          r="4.2"
+          fill="none"
+          stroke={`url(#${uid}-gold)`}
+          strokeWidth="0.6"
+        />
         <path
-          d="M-3.6 0 Q0 -2.4 3.6 0"
+          d="M-3 0 Q0 -2 3 0"
           stroke="#c1272d"
           strokeWidth="0.7"
           fill="none"
           strokeLinecap="round"
         />
         <path
-          d="M-3.6 0 Q0 2.4 3.6 0"
+          d="M-3 0 Q0 2 3 0"
           stroke="#c1272d"
           strokeWidth="0.7"
           fill="none"
           strokeLinecap="round"
         />
-        {/* Stitches */}
+        {/* A pair of stitch ticks for fidelity */}
         <g stroke="#c1272d" strokeWidth="0.4" strokeLinecap="round">
-          <path d="M-2.6 -1.2 L-2.6 -1.8" />
-          <path d="M-1.2 -1.8 L-1.2 -2.4" />
-          <path d="M0 -2 L0 -2.6" />
-          <path d="M1.2 -1.8 L1.2 -2.4" />
-          <path d="M2.6 -1.2 L2.6 -1.8" />
-          <path d="M-2.6 1.2 L-2.6 1.8" />
-          <path d="M-1.2 1.8 L-1.2 2.4" />
-          <path d="M0 2 L0 2.6" />
-          <path d="M1.2 1.8 L1.2 2.4" />
-          <path d="M2.6 1.2 L2.6 1.8" />
+          <path d="M-1.4 -1.3 L-1.4 -1.9" />
+          <path d="M0 -1.7 L0 -2.3" />
+          <path d="M1.4 -1.3 L1.4 -1.9" />
+          <path d="M-1.4 1.3 L-1.4 1.9" />
+          <path d="M0 1.7 L0 2.3" />
+          <path d="M1.4 1.3 L1.4 1.9" />
         </g>
       </g>
 
-      {/* Premium three-star pip row at the bottom of the shield */}
+      {/* === Flanking gold stars beside the crown === */}
       <g fill={`url(#${uid}-gold)`}>
-        <Star cx={24} cy={52} r={1.6} />
-        <Star cx={32} cy={53.5} r={2} />
-        <Star cx={40} cy={52} r={1.6} />
+        <Star cx={18} cy={28} r={1.8} />
+        <Star cx={62} cy={28} r={1.8} />
       </g>
+
+      {/* === Ribbon hint at the foot (regal accent) === */}
+      <path
+        d="M28 70 L40 68 L52 70 L48 73 L40 71 L32 73 Z"
+        fill={`url(#${uid}-gold)`}
+        stroke="#4b2c08"
+        strokeWidth="0.4"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
 function Star({ cx, cy, r }: { cx: number; cy: number; r: number }) {
-  // 5-pointed star centred at (cx,cy). Outer radius r, inner radius r/2.5
   const pts: string[] = [];
   const outer = r;
   const inner = r / 2.5;
