@@ -11,6 +11,7 @@ import {
 import { AdminApprovalActions } from "@/components/admin/AdminApprovalActions";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { AdminSignOutButton } from "@/components/admin/AdminSignOutButton";
+import { DeleteTournamentButton } from "@/components/admin/DeleteTournamentButton";
 
 export const dynamic = "force-dynamic";
 
@@ -201,10 +202,16 @@ export default async function AdminPage() {
                     {t._count.matches === 1 ? "match" : "matches"} so far
                   </p>
                 </div>
-                <AdminApprovalActions
-                  tournamentId={t.id}
-                  currentStatus="PENDING"
-                />
+                <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                  <AdminApprovalActions
+                    tournamentId={t.id}
+                    currentStatus="PENDING"
+                  />
+                  <DeleteTournamentButton
+                    tournamentId={t.id}
+                    tournamentName={t.name}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -239,7 +246,103 @@ export default async function AdminPage() {
           }))}
         />
       </div>
+
+      <AllTournamentsSection />
     </div>
+  );
+}
+
+async function AllTournamentsSection() {
+  // Full list so the admin can clean up anything — including tournaments
+  // that were approved long ago.
+  const all = await prisma.tournament.findMany({
+    orderBy: [{ approvalStatus: "asc" }, { createdAt: "desc" }],
+    include: {
+      organizer: { select: { id: true, name: true, email: true } },
+      _count: { select: { teams: true, matches: true } }
+    }
+  });
+
+  if (all.length === 0) {
+    return (
+      <section className="card overflow-hidden p-0">
+        <header className="border-b border-ink-100 px-5 py-3">
+          <h2 className="font-display text-lg font-bold">All tournaments</h2>
+        </header>
+        <p className="px-5 py-6 text-center text-sm text-ink-500">
+          No tournaments exist yet.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card overflow-hidden p-0">
+      <header className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
+        <div>
+          <h2 className="font-display text-lg font-bold">All tournaments</h2>
+          <p className="mt-0.5 text-xs text-ink-500">
+            Permanently delete a tournament here. Matches are removed with
+            it; teams are kept and just unlinked.
+          </p>
+        </div>
+        <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+          {all.length} total
+        </span>
+      </header>
+      <ul className="divide-y divide-ink-100">
+        {all.map((t) => (
+          <li
+            key={t.id}
+            className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`/tournaments/${t.id}`}
+                  className="truncate text-sm font-semibold text-ink-900 hover:text-brand-700"
+                >
+                  {t.name}
+                </Link>
+                <ApprovalBadge status={t.approvalStatus} />
+              </div>
+              <p className="mt-0.5 truncate text-xs text-ink-500">
+                {t.city} · by {t.organizer.name} · {t._count.teams}{" "}
+                {t._count.teams === 1 ? "team" : "teams"} · {t._count.matches}{" "}
+                {t._count.matches === 1 ? "match" : "matches"}
+              </p>
+            </div>
+            <DeleteTournamentButton
+              tournamentId={t.id}
+              tournamentName={t.name}
+              size="sm"
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ApprovalBadge({ status }: { status: string }) {
+  if (status === "APPROVED") {
+    return (
+      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+        Approved
+      </span>
+    );
+  }
+  if (status === "REJECTED") {
+    return (
+      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-800">
+        Rejected
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+      Pending
+    </span>
   );
 }
 
