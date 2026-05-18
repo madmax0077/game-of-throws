@@ -77,6 +77,9 @@ model Player {
   bowlingArm  String? // RIGHT | LEFT
   bowlingType String? // FAST | MEDIUM | SPIN | LEG_SPIN | OFF_SPIN
   jerseyNo    Int?
+  // True for the team captain. The API enforces "at most one captain
+  // per team" by clearing the previous captain when a new one is set.
+  isCaptain   Boolean  @default(false)
   avatarUrl   String?
   teamId      String?
   userId      String?  @unique

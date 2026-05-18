@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatOvers } from "@/lib/utils";
+import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import { Logo } from "@/components/Logo";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
@@ -229,6 +230,7 @@ export default async function WatchMatchPage({
                 <BallPill
                   key={b.id}
                   runs={b.runs}
+                  extraRuns={b.extraRuns ?? 0}
                   isWicket={b.isWicket}
                   extraType={b.extraType ?? null}
                 />
@@ -405,28 +407,23 @@ function BattingDot() {
 
 function BallPill({
   runs,
+  extraRuns,
   isWicket,
   extraType
 }: {
   runs: number;
+  extraRuns: number;
   isWicket: boolean;
   extraType: string | null;
 }) {
+  const b = { runs, extraRuns, isWicket, extraType };
   return (
     <span
-      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${
-        isWicket
-          ? "bg-ink-900 text-white"
-          : runs === 6
-          ? "bg-emerald-500 text-white"
-          : runs === 4
-          ? "bg-amber-400 text-ink-900"
-          : extraType
-          ? "bg-sky-100 text-sky-800"
-          : "bg-ink-100 text-ink-700"
-      }`}
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${ballPillColor(
+        b
+      )}`}
     >
-      {isWicket ? "W" : extraType ? extraType[0] : runs}
+      {ballPillText(b)}
     </span>
   );
 }

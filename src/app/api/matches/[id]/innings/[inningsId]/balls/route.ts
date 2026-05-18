@@ -65,6 +65,27 @@ export async function POST(
   const overNumber = Math.floor(legalBallsBefore / 6);
   const ballInOver = (legalBallsBefore % 6) + 1;
 
+  // Bowler quota: a bowler may bowl at most 2 overs in this match. They
+  // are allowed to *finish* an over they have already started, but cannot
+  // *start* a third one. We detect "starting a new over" by checking
+  // whether this bowler has any prior legal balls in the current over.
+  const overStartersForBowler = await prisma.ball.findMany({
+    where: { inningsId: innings.id, bowlerId: data.bowlerId, legal: true },
+    select: { overNumber: true },
+    distinct: ["overNumber"]
+  });
+  const oversAlreadyStarted = overStartersForBowler.map((b) => b.overNumber);
+  const startingNewOver = !oversAlreadyStarted.includes(overNumber);
+  const MAX_OVERS_PER_BOWLER = 2;
+  if (startingNewOver && oversAlreadyStarted.length >= MAX_OVERS_PER_BOWLER) {
+    return NextResponse.json(
+      {
+        error: `This bowler has already bowled ${MAX_OVERS_PER_BOWLER} overs in this match. Pick a different bowler.`
+      },
+      { status: 400 }
+    );
+  }
+
   // Super over: team total is doubled, but Ball.runs stays raw so individual
   // batter/bowler stats remain accurate.
   const teamScoreMultiplier = innings.isSuperOver ? 2 : 1;
@@ -137,15 +158,20 @@ export async function POST(
   // Closure rules:
   //   1) All overs bowled (totalBalls >= match.overs * 6)
   //   2) All out — need at least 2 batters left, so wickets >= players - 1
-  //   3) Target reached — chasing side (innings 2) has overtaken the
-  //      first-innings total. Match is decided, no point bowling the
-  //      remaining overs.
+  //   3) Target reached — chasing side (innings 2 only) has overtaken
+  //      the first-innings total. Match is decided, no point bowling
+  //      the remaining overs.
   const overLimitReached = updatedInnings.totalBalls >= innings.match.overs * 6;
   const allOut =
     battingTeamPlayerCount >= 2 &&
     updatedInnings.totalWickets >= battingTeamPlayerCount - 1;
+  // IMPORTANT: only the 2nd innings can "reach the target". Guarding by
+  // innings.number prevents any accidental misuse if firstInningsRuns is
+  // ever populated for a non-chase context.
   const targetReached =
-    firstInningsRuns !== null && updatedInnings.totalRuns > firstInningsRuns;
+    innings.number === 2 &&
+    firstInningsRuns !== null &&
+    updatedInnings.totalRuns > firstInningsRuns;
 
   let closed = false;
   let closureReason:

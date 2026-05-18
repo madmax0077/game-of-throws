@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatOvers } from "@/lib/utils";
+import { ballPillText, ballPillColor } from "@/lib/ballLabel";
 
 type Player = { id: string; name: string };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -27,8 +28,13 @@ type Innings = {
   isSuperOver: boolean;
   dismissedBatterIds: string[];
   previousOverBowlerId: string | null;
+  // distinct overs each bowler in the bowling team has bowled so far
+  // (used to enforce the "max 2 overs per bowler per match" cap)
+  bowlerOversCount: Record<string, number>;
   recentBalls: RecentBall[];
 };
+
+const MAX_OVERS_PER_BOWLER = 2;
 type Match = {
   id: string;
   overs: number;
@@ -695,19 +701,11 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
           {innings.recentBalls.slice().reverse().map((b) => (
             <span
               key={b.id}
-              className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${
-                b.isWicket
-                  ? "bg-ink-900 text-white"
-                  : b.runs === 6
-                  ? "bg-emerald-500 text-white"
-                  : b.runs === 4
-                  ? "bg-amber-400 text-ink-900"
-                  : b.extraType
-                  ? "bg-sky-100 text-sky-800"
-                  : "bg-ink-100 text-ink-700"
-              }`}
+              className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${ballPillColor(
+                b
+              )}`}
             >
-              {b.isWicket ? "W" : b.extraType ? b.extraType[0] : b.runs}
+              {ballPillText(b)}
             </span>
           ))}
         </div>
@@ -734,6 +732,8 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             options={bowlingTeam.players}
             atOverBoundary={atOverBoundary}
             blockedBowlerId={innings.previousOverBowlerId}
+            oversByBowler={innings.bowlerOversCount}
+            maxOvers={MAX_OVERS_PER_BOWLER}
           />
         </div>
       </section>
@@ -1004,13 +1004,17 @@ function BowlerSelect({
   onChange,
   options,
   atOverBoundary,
-  blockedBowlerId
+  blockedBowlerId,
+  oversByBowler,
+  maxOvers
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { id: string; name: string }[];
   atOverBoundary: boolean;
   blockedBowlerId: string | null;
+  oversByBowler: Record<string, number>;
+  maxOvers: number;
 }) {
   return (
     <div>
@@ -1022,20 +1026,37 @@ function BowlerSelect({
       >
         <option value="">Select…</option>
         {options.map((p) => {
-          const blocked = atOverBoundary && p.id === blockedBowlerId;
+          const oversBowled = oversByBowler[p.id] ?? 0;
+          // Capped bowlers can't be picked at the start of an over.
+          // (Mid-over they would already be selected, never picked fresh
+          // — the over boundary forces a re-selection.)
+          const overCapped = oversBowled >= maxOvers && p.id !== value;
+          const previousOver = atOverBoundary && p.id === blockedBowlerId;
+          const blocked = overCapped || previousOver;
+          const suffix = previousOver
+            ? "  —  bowled previous over"
+            : overCapped
+            ? `  —  ${oversBowled}/${maxOvers} overs (max reached)`
+            : oversBowled > 0
+            ? `  ·  ${oversBowled}/${maxOvers} ov`
+            : "";
           return (
             <option key={p.id} value={p.id} disabled={blocked}>
               {p.name}
-              {blocked ? "  —  bowled previous over" : ""}
+              {suffix}
             </option>
           );
         })}
       </select>
-      {atOverBoundary && blockedBowlerId && (
-        <p className="mt-1.5 text-xs text-ink-500">
-          The bowler who finished the previous over can&apos;t bowl the next one.
-        </p>
-      )}
+      <p className="mt-1.5 text-xs text-ink-500">
+        Each bowler can bowl up to {maxOvers} overs per match.
+        {atOverBoundary && blockedBowlerId && (
+          <>
+            {" "}The bowler who finished the previous over can&apos;t bowl
+            the next one.
+          </>
+        )}
+      </p>
     </div>
   );
 }

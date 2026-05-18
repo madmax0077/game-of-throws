@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, formatOvers } from "@/lib/utils";
+import { ballPillColor, ballPillText } from "@/lib/ballLabel";
 import { ShareWatchLink } from "@/components/ShareWatchLink";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 
@@ -118,20 +119,12 @@ export default async function MatchDetail({
                 {inn.balls.slice().reverse().map((b) => (
                   <span
                     key={b.id}
-                    className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${
-                      b.isWicket
-                        ? "bg-ink-900 text-white"
-                        : b.runs === 6
-                        ? "bg-emerald-500 text-white"
-                        : b.runs === 4
-                        ? "bg-amber-400 text-ink-900"
-                        : b.extraType
-                        ? "bg-sky-100 text-sky-800"
-                        : "bg-ink-100 text-ink-700"
-                    }`}
+                    className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold ${ballPillColor(
+                      b
+                    )}`}
                     title={b.commentary ?? ""}
                   >
-                    {b.isWicket ? "W" : b.extraType ? "X" : b.runs}
+                    {ballPillText(b)}
                   </span>
                 ))}
               </div>

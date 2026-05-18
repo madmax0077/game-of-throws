@@ -10,7 +10,8 @@ const CreateSchema = z.object({
   battingHand: z.enum(["LEFT", "RIGHT"]).default("RIGHT"),
   jerseyNo: z.number().int().min(0).max(999).optional(),
   bowlingArm: z.enum(["LEFT", "RIGHT"]).optional(),
-  bowlingType: z.enum(["FAST", "MEDIUM", "SPIN", "LEG_SPIN", "OFF_SPIN"]).optional()
+  bowlingType: z.enum(["FAST", "MEDIUM", "SPIN", "LEG_SPIN", "OFF_SPIN"]).optional(),
+  isCaptain: z.boolean().optional()
 });
 
 export async function POST(
@@ -33,17 +34,34 @@ export async function POST(
   }
   const data = parsed.data;
 
-  const player = await prisma.player.create({
-    data: {
-      name: data.name.trim(),
-      role: data.role,
-      battingHand: data.battingHand,
-      jerseyNo: data.jerseyNo ?? null,
-      bowlingArm: data.bowlingArm ?? null,
-      bowlingType: data.bowlingType ?? null,
-      teamId: team.id
-    }
-  });
+  // If the new player is being added as captain, demote any existing
+  // captain on this team first. Wrapped in a transaction so we never
+  // end up with two captains.
+  const operations = [];
+  if (data.isCaptain) {
+    operations.push(
+      prisma.player.updateMany({
+        where: { teamId: team.id, isCaptain: true },
+        data: { isCaptain: false }
+      })
+    );
+  }
+  operations.push(
+    prisma.player.create({
+      data: {
+        name: data.name.trim(),
+        role: data.role,
+        battingHand: data.battingHand,
+        jerseyNo: data.jerseyNo ?? null,
+        bowlingArm: data.bowlingArm ?? null,
+        bowlingType: data.bowlingType ?? null,
+        isCaptain: !!data.isCaptain,
+        teamId: team.id
+      }
+    })
+  );
+  const results = await prisma.$transaction(operations);
+  const player = results[results.length - 1];
 
   return NextResponse.json(player, { status: 201 });
 }

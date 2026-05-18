@@ -8,6 +8,7 @@ type Player = {
   name: string;
   role: string;
   battingHand: string;
+  isCaptain: boolean;
 };
 
 const ROLE_OPTIONS = [
@@ -34,6 +35,9 @@ export function SquadEditor({
   const [name, setName] = useState("");
   const [role, setRole] = useState("BATTER");
   const [battingHand, setBattingHand] = useState("RIGHT");
+  const [isCaptain, setIsCaptain] = useState(false);
+
+  const teamHasCaptain = players.some((p) => p.isCaptain);
 
   async function addPlayer(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +46,8 @@ export function SquadEditor({
     const body: Record<string, unknown> = {
       name: name.trim(),
       role,
-      battingHand
+      battingHand,
+      isCaptain
     };
 
     const res = await fetch(`/api/teams/${teamId}/players`, {
@@ -59,6 +64,24 @@ export function SquadEditor({
     setName("");
     setRole("BATTER");
     setBattingHand("RIGHT");
+    setIsCaptain(false);
+    router.refresh();
+  }
+
+  async function makeCaptain(id: string) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/players/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isCaptain: true })
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Could not set captain.");
+      return;
+    }
     router.refresh();
   }
 
@@ -161,6 +184,23 @@ export function SquadEditor({
             </div>
           </div>
 
+          <label className="mt-3 flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={isCaptain}
+              onChange={(e) => setIsCaptain(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-700 focus:ring-brand-500"
+            />
+            <span>
+              <b>Captain (C)</b>
+              <span className="ml-1 text-xs text-ink-500">
+                {teamHasCaptain
+                  ? "— this will replace the current captain"
+                  : "— optional, you can promote anyone later"}
+              </span>
+            </span>
+          </label>
+
           <div className="mt-3 flex gap-2">
             <button type="submit" className="btn-primary" disabled={busy}>
               {busy ? "Adding..." : "Add to squad"}
@@ -170,6 +210,7 @@ export function SquadEditor({
               onClick={() => {
                 setAddOpen(false);
                 setError(null);
+                setIsCaptain(false);
               }}
               className="btn-ghost"
             >
@@ -203,18 +244,48 @@ export function SquadEditor({
             ) : (
               <li
                 key={p.id}
-                className="flex items-center gap-4 p-3 hover:bg-ink-50/60"
+                className="flex flex-wrap items-center gap-3 p-3 hover:bg-ink-50/60"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
+                <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
                   {p.name[0]?.toUpperCase() ?? "?"}
+                  {p.isCaptain && (
+                    <span
+                      title="Captain"
+                      className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-extrabold text-ink-900 ring-2 ring-white"
+                    >
+                      C
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-semibold">{p.name}</p>
+                  <p className="flex items-center gap-2 truncate text-sm font-semibold">
+                    {p.name}
+                    {p.isCaptain && (
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                        Captain
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-ink-500">
                     {ROLE_OPTIONS.find((r) => r.value === p.role)?.label ?? p.role}{" "}
                     • {p.battingHand === "LEFT" ? "LH" : "RH"} bat
                   </p>
                 </div>
+                {!p.isCaptain && (
+                  <button
+                    type="button"
+                    onClick={() => makeCaptain(p.id)}
+                    disabled={busy}
+                    className="rounded-md px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                    title={
+                      teamHasCaptain
+                        ? "Replace the current captain"
+                        : "Make this player captain"
+                    }
+                  >
+                    Make captain
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setEditingId(p.id)}

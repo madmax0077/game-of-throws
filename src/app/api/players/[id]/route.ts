@@ -13,7 +13,8 @@ const UpdateSchema = z.object({
   bowlingType: z
     .enum(["FAST", "MEDIUM", "SPIN", "LEG_SPIN", "OFF_SPIN"])
     .nullable()
-    .optional()
+    .optional(),
+  isCaptain: z.boolean().optional()
 });
 
 export async function PATCH(
@@ -33,6 +34,25 @@ export async function PATCH(
   }
 
   try {
+    // If we're promoting this player to captain, demote any existing
+    // captain on the same team first so the "at most one captain" rule
+    // is preserved.
+    if (parsed.data.isCaptain === true) {
+      const existing = await prisma.player.findUnique({
+        where: { id: params.id },
+        select: { teamId: true }
+      });
+      if (existing?.teamId) {
+        await prisma.player.updateMany({
+          where: {
+            teamId: existing.teamId,
+            isCaptain: true,
+            NOT: { id: params.id }
+          },
+          data: { isCaptain: false }
+        });
+      }
+    }
     const player = await prisma.player.update({
       where: { id: params.id },
       data: parsed.data

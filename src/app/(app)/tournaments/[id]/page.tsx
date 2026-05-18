@@ -35,10 +35,13 @@ export default async function TournamentDetailPage({
           innings: {
             // Only count closed innings (skip super overs) for NRR.
             where: { isClosed: true, isSuperOver: false },
+            orderBy: { number: "asc" },
             select: {
+              number: true,
               battingTeamId: true,
               bowlingTeamId: true,
               totalRuns: true,
+              totalWickets: true,
               totalBalls: true
             }
           }
@@ -106,6 +109,14 @@ export default async function TournamentDetailPage({
     })
   );
 
+  // Player counts per team — needed to derive whether an innings ended
+  // via "all out" (which forces the full allotted overs to be used in
+  // the NRR denominator, per the ICC rule).
+  const playerCountByTeam = new Map<string, number>();
+  tournament.teams.forEach((t) =>
+    playerCountByTeam.set(t.id, t._count.players)
+  );
+
   tournament.matches
     .filter((m) => m.status === "COMPLETED" && m.resultText)
     .forEach((m) => {
@@ -125,20 +136,49 @@ export default async function TournamentDetailPage({
         away.ties++;
       }
 
-      // Net Run Rate accumulation from this match's innings.
-      // (innings count actual overs faced — a simple, predictable variant of NRR.)
+      // Net Run Rate accumulation from this match's innings, ICC-style.
+      //
+      // The denominator for each innings is the "effective overs":
+      //   - bowled out before the overs ran out   →  full match.overs
+      //                                              (so a team can't
+      //                                              inflate its NRR by
+      //                                              being skittled fast)
+      //   - chasing side that overhauls the target →  actual overs faced
+      //                                              (a fast chase
+      //                                              boosts NRR — and the
+      //                                              concession rate
+      //                                              against the bowling
+      //                                              side is correctly
+      //                                              high)
+      //   - everyone else (overs fully bowled)     →  actual overs faced
+      //                                              (= match.overs)
+      const firstInnings = m.innings.find((inn) => inn.number === 1);
+      const firstRuns = firstInnings?.totalRuns ?? null;
+      const maxBalls = m.overs * 6;
+
       for (const inn of m.innings) {
         if (inn.totalBalls === 0) continue;
-        const overs = inn.totalBalls / 6;
+        const players = playerCountByTeam.get(inn.battingTeamId) ?? 0;
+        const isChaseWin =
+          inn.number === 2 &&
+          firstRuns !== null &&
+          inn.totalRuns > firstRuns;
+        const wasAllOut =
+          players >= 2 &&
+          inn.totalWickets >= players - 1 &&
+          inn.totalBalls < maxBalls &&
+          !isChaseWin;
+        const effectiveOvers = wasAllOut ? m.overs : inn.totalBalls / 6;
+
         const batting = stats.get(inn.battingTeamId);
         const bowling = stats.get(inn.bowlingTeamId);
         if (batting) {
           batting.runsFor += inn.totalRuns;
-          batting.oversFor += overs;
+          batting.oversFor += effectiveOvers;
         }
         if (bowling) {
           bowling.runsAgainst += inn.totalRuns;
-          bowling.oversAgainst += overs;
+          bowling.oversAgainst += effectiveOvers;
         }
       }
     });

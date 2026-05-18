@@ -29,11 +29,14 @@ export default async function ScorePage({
   //   - dismissedBatterIds (so new-batter picker can exclude them)
   //   - previousOverBowlerId (bowler of the most recent legal ball, used to
   //     block re-selection at over boundaries)
+  //   - bowlerOversCount  (distinct overs each bowler has bowled in this
+  //     innings — used to enforce the per-bowler over cap in the picker)
   const dismissalsByInnings: Record<string, string[]> = {};
   const previousOverBowlerByInnings: Record<string, string | null> = {};
+  const bowlerOversByInnings: Record<string, Record<string, number>> = {};
 
   for (const inn of match.innings) {
-    const [dismissals, lastLegalBall] = await Promise.all([
+    const [dismissals, lastLegalBall, bowlerOvers] = await Promise.all([
       prisma.ball.findMany({
         where: { inningsId: inn.id, isWicket: true, outBatterId: { not: null } },
         select: { outBatterId: true }
@@ -42,12 +45,22 @@ export default async function ScorePage({
         where: { inningsId: inn.id, legal: true },
         orderBy: { createdAt: "desc" },
         select: { bowlerId: true }
+      }),
+      prisma.ball.findMany({
+        where: { inningsId: inn.id, legal: true },
+        select: { bowlerId: true, overNumber: true },
+        distinct: ["bowlerId", "overNumber"]
       })
     ]);
     dismissalsByInnings[inn.id] = dismissals
       .map((d) => d.outBatterId)
       .filter((x): x is string => Boolean(x));
     previousOverBowlerByInnings[inn.id] = lastLegalBall?.bowlerId ?? null;
+    const overCount: Record<string, number> = {};
+    for (const row of bowlerOvers) {
+      overCount[row.bowlerId] = (overCount[row.bowlerId] ?? 0) + 1;
+    }
+    bowlerOversByInnings[inn.id] = overCount;
   }
 
   return (
@@ -81,6 +94,7 @@ export default async function ScorePage({
           isSuperOver: inn.isSuperOver,
           dismissedBatterIds: dismissalsByInnings[inn.id] ?? [],
           previousOverBowlerId: previousOverBowlerByInnings[inn.id] ?? null,
+          bowlerOversCount: bowlerOversByInnings[inn.id] ?? {},
           recentBalls: inn.balls.map((b) => ({
             id: b.id,
             runs: b.runs,

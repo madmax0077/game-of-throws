@@ -65,7 +65,8 @@ export default async function TeamDetailPage({
     id: p.id,
     name: p.name,
     role: p.role,
-    battingHand: p.battingHand
+    battingHand: p.battingHand,
+    isCaptain: p.isCaptain
   }));
 
   // For player viewer: figure out their join state for THIS team.
@@ -188,11 +189,26 @@ export default async function TeamDetailPage({
                   key={p.id}
                   className="flex items-center gap-4 p-3"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
+                  <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
                     {p.name[0]?.toUpperCase() ?? "?"}
+                    {p.isCaptain && (
+                      <span
+                        title="Captain"
+                        className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-extrabold text-ink-900 ring-2 ring-white"
+                      >
+                        C
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-semibold">{p.name}</p>
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold">
+                      {p.name}
+                      {p.isCaptain && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                          Captain
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-ink-500">
                       {prettyRole(p.role)} •{" "}
                       {p.battingHand === "LEFT" ? "LH" : "RH"} bat
