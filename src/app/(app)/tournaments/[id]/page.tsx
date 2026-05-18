@@ -5,9 +5,17 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { isPlayer } from "@/lib/roles";
+import {
+  computeSeriesPoints,
+  pointsConfig,
+  type ScorecardBall,
+  type ScorecardPlayer,
+  type SeriesMatchInput
+} from "@/lib/scorecard";
 import { AddTeamForm } from "@/components/AddTeamForm";
 import { ScheduleMatchForm } from "@/components/ScheduleMatchForm";
 import { JoinTeamButton } from "@/components/JoinTeamButton";
+import { SeriesLeaderboard } from "@/components/SeriesLeaderboard";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +89,112 @@ export default async function TournamentDetailPage({
   const myTeamInThisTournament = tournament.teams.find((t) =>
     t.players.some((p) => p.id === myPlayer?.id)
   );
+
+  // --- Player of the series leaderboard ---------------------------------
+  // Pull every completed match in this tournament with its balls + team
+  // rosters so we can sum per-match Dream11 points into a series ranking.
+  // Each match is scored with its own format-appropriate config so a
+  // 6-over fixture and a 20-over fixture in the same tournament both
+  // contribute fairly.
+  const completedMatches = await prisma.match.findMany({
+    where: { tournamentId: params.id, status: "COMPLETED" },
+    select: {
+      id: true,
+      overs: true,
+      homeTeamId: true,
+      awayTeamId: true,
+      homeTeam: {
+        select: {
+          players: {
+            select: { id: true, name: true, role: true, isCaptain: true }
+          }
+        }
+      },
+      awayTeam: {
+        select: {
+          players: {
+            select: { id: true, name: true, role: true, isCaptain: true }
+          }
+        }
+      },
+      innings: {
+        select: {
+          balls: {
+            select: {
+              id: true,
+              strikerId: true,
+              nonStrikerId: true,
+              bowlerId: true,
+              outBatterId: true,
+              fielderId: true,
+              runs: true,
+              extraType: true,
+              extraRuns: true,
+              isWicket: true,
+              wicketType: true,
+              legal: true,
+              overNumber: true,
+              ballInOver: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const seriesInputs: SeriesMatchInput[] = completedMatches.map((m) => {
+    const players: ScorecardPlayer[] = [
+      ...m.homeTeam.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        isCaptain: p.isCaptain
+      })),
+      ...m.awayTeam.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        isCaptain: p.isCaptain
+      }))
+    ];
+    const teamIdByPlayerId = new Map<string, string>();
+    for (const p of m.homeTeam.players)
+      teamIdByPlayerId.set(p.id, m.homeTeamId);
+    for (const p of m.awayTeam.players)
+      teamIdByPlayerId.set(p.id, m.awayTeamId);
+
+    const balls: ScorecardBall[] = m.innings.flatMap((inn) =>
+      inn.balls.map((b) => ({
+        id: b.id,
+        strikerId: b.strikerId,
+        nonStrikerId: b.nonStrikerId,
+        bowlerId: b.bowlerId,
+        outBatterId: b.outBatterId,
+        fielderId: b.fielderId,
+        runs: b.runs,
+        extraType: b.extraType,
+        extraRuns: b.extraRuns ?? 0,
+        isWicket: b.isWicket,
+        wicketType: b.wicketType,
+        legal: b.legal,
+        overNumber: b.overNumber,
+        ballInOver: b.ballInOver
+      }))
+    );
+
+    return {
+      balls,
+      players,
+      teamIdByPlayerId,
+      config: pointsConfig(m.overs)
+    };
+  });
+
+  const seriesRows = computeSeriesPoints(seriesInputs);
+  const seriesTeams = tournament.teams.map((t) => ({
+    id: t.id,
+    shortName: t.shortName
+  }));
 
   // Points: wins worth 2, ties 1, losses 0.
   const stats = new Map<
@@ -490,6 +604,13 @@ export default async function TournamentDetailPage({
           </table>
         </div>
       </section>
+
+      {/* Player of the series — sum of per-match Dream11 points */}
+      <SeriesLeaderboard
+        rows={seriesRows}
+        teams={seriesTeams}
+        matchesPlayed={completedMatches.length}
+      />
     </div>
   );
 }

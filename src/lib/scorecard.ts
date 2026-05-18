@@ -736,3 +736,102 @@ export function computeMatchPoints(
   );
   return rows;
 }
+
+// ---------- Series / Tournament-level leaderboard ----------
+//
+// Aggregates per-match points across an entire tournament so an organizer
+// can crown a "Player of the Series". Each match's points are computed in
+// isolation with its own format-appropriate config (so e.g. a 6-over
+// fixture and a 20-over fixture in the same tournament both contribute
+// fairly).
+
+export type SeriesPlayerRow = {
+  player: ScorecardPlayer;
+  teamId: string | null;
+  matchesPlayed: number;
+  totalPoints: number;
+  runs: number;
+  ballsFaced: number;
+  wickets: number;
+  legalBallsBowled: number;
+  runsConceded: number;
+  catches: number;
+  runOuts: number;
+  stumpings: number;
+  fours: number;
+  sixes: number;
+};
+
+export type SeriesMatchInput = {
+  balls: ScorecardBall[];
+  players: ScorecardPlayer[];
+  teamIdByPlayerId: Map<string, string>;
+  config: PointsConfig;
+};
+
+export function computeSeriesPoints(
+  matches: SeriesMatchInput[]
+): SeriesPlayerRow[] {
+  // Aggregate per-match rows by player id, summing every counting stat.
+  type Agg = SeriesPlayerRow;
+  const byPlayer = new Map<string, Agg>();
+  const ensure = (p: ScorecardPlayer, teamId: string | null): Agg => {
+    let row = byPlayer.get(p.id);
+    if (!row) {
+      row = {
+        player: p,
+        teamId,
+        matchesPlayed: 0,
+        totalPoints: 0,
+        runs: 0,
+        ballsFaced: 0,
+        wickets: 0,
+        legalBallsBowled: 0,
+        runsConceded: 0,
+        catches: 0,
+        runOuts: 0,
+        stumpings: 0,
+        fours: 0,
+        sixes: 0
+      };
+      byPlayer.set(p.id, row);
+    } else if (!row.teamId && teamId) {
+      // Latch the most recent known team for display.
+      row.teamId = teamId;
+    }
+    return row;
+  };
+
+  for (const m of matches) {
+    const matchRows = computeMatchPoints(
+      m.balls,
+      m.players,
+      m.teamIdByPlayerId,
+      m.config
+    );
+    for (const r of matchRows) {
+      if (!r.participated) continue;
+      const agg = ensure(r.player, r.teamId);
+      agg.matchesPlayed += 1;
+      agg.totalPoints += r.points;
+      agg.runs += r.runs;
+      agg.ballsFaced += r.ballsFaced;
+      agg.wickets += r.wickets;
+      agg.legalBallsBowled += r.legalBallsBowled;
+      agg.runsConceded += r.runsConceded;
+      agg.catches += r.catches;
+      agg.runOuts += r.runOuts;
+      agg.stumpings += r.stumpings;
+      agg.fours += r.fours;
+      agg.sixes += r.sixes;
+    }
+  }
+
+  return Array.from(byPlayer.values()).sort(
+    (a, b) =>
+      b.totalPoints - a.totalPoints ||
+      b.runs - a.runs ||
+      b.wickets - a.wickets ||
+      a.player.name.localeCompare(b.player.name)
+  );
+}
