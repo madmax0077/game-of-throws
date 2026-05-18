@@ -8,6 +8,9 @@ import {
   getViewer,
   tournamentVisibilityWhere
 } from "@/lib/tournamentVisibility";
+import { getConfiguredAdminEmail } from "@/lib/adminBootstrap";
+import { createApprovalToken } from "@/lib/approvalToken";
+import { sendTournamentSubmittedEmail } from "@/lib/email";
 
 const CreateSchema = z.object({
   name: z.string().min(2).max(120),
@@ -58,5 +61,53 @@ export async function POST(req: Request) {
       approvedById: adminCreator ? creator.id : null
     }
   });
+
+  // Notify the admin asynchronously when a non-admin submits a tournament.
+  // We don't await this — a slow/failed email shouldn't block the response.
+  if (!adminCreator) {
+    notifyAdminOfNewTournament(req, tournament.id, creator.id).catch((err) =>
+      console.error("[tournaments.POST] admin email failed:", err)
+    );
+  }
+
   return NextResponse.json(tournament, { status: 201 });
+}
+
+async function notifyAdminOfNewTournament(
+  req: Request,
+  tournamentId: string,
+  organizerId: string
+): Promise<void> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: {
+      id: true,
+      name: true,
+      city: true,
+      overs: true,
+      startDate: true,
+      endDate: true
+    }
+  });
+  const organizer = await prisma.user.findUnique({
+    where: { id: organizerId },
+    select: { name: true, email: true }
+  });
+  if (!tournament || !organizer) return;
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXTAUTH_URL ||
+    new URL(req.url).origin;
+  const token = createApprovalToken(tournament.id);
+  const approveUrl = `${baseUrl.replace(/\/$/, "")}/admin/approve?token=${encodeURIComponent(token)}`;
+  const dashboardUrl = `${baseUrl.replace(/\/$/, "")}/admin`;
+
+  await sendTournamentSubmittedEmail({
+    to: getConfiguredAdminEmail(),
+    tournament,
+    organizer,
+    approveUrl,
+    dashboardUrl
+  });
 }
