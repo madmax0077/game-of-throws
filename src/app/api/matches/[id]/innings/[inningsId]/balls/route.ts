@@ -131,15 +131,19 @@ export async function POST(
     })
   ]);
 
-  // Super Over auto-disable: the flag is a "this over only" multiplier.
-  // The moment a full over completes, switch it back off so the next over
-  // is a normal over again. Scorer can re-enable it at the start of the
-  // next over from the scoring board if needed.
+  // Super Over auto-disable: the original feature let scorers toggle a
+  // "this over only" 2x multiplier inside a regular innings. At the end of
+  // that over the flag flips off so the next over scores normally.
+  //
+  // IMPORTANT: a dedicated Super-Over INNINGS (innings.number > 2) is a
+  // different beast — the entire innings is a super over and we must keep
+  // the flag on so the chasing leg can find it as the "earlier super
+  // over" to set its target. Only auto-disable for regular innings 1 & 2.
   const overJustEnded =
     data.legal &&
     updatedInnings.totalBalls > 0 &&
     updatedInnings.totalBalls % 6 === 0;
-  if (overJustEnded && innings.isSuperOver) {
+  if (overJustEnded && innings.isSuperOver && innings.number <= 2) {
     await prisma.innings.update({
       where: { id: innings.id },
       data: { isSuperOver: false }
@@ -148,27 +152,29 @@ export async function POST(
 
   // What total does the current innings need to overhaul to "reach the
   // target"? For a regular 2nd innings it's the regular 1st innings total.
-  // For a super-over chase it's the previous super-over innings (the team
-  // batting first in the super over).
+  // For a super-over CHASE leg it's the preceding super-over leg, which we
+  // identify purely by number (the leg at innings.number - 1). We avoid
+  // filtering by isSuperOver here because an older bug could have flipped
+  // that flag off on the preceding leg.
   let targetRuns: number | null = null;
   if (!innings.isSuperOver && innings.number === 2) {
     const first = await prisma.innings.findFirst({
-      where: { matchId: innings.match.id, number: 1, isSuperOver: false },
+      where: { matchId: innings.match.id, number: 1 },
       select: { totalRuns: true }
     });
     targetRuns = first?.totalRuns ?? null;
-  } else if (innings.isSuperOver) {
-    // If there is an EARLIER super-over innings, this is the chase leg.
-    const earlierSuper = await prisma.innings.findFirst({
+  } else if (innings.isSuperOver && innings.number >= 4) {
+    // Super-over legs are always scheduled back-to-back, so the immediate
+    // predecessor (number - 1) is the leg we're chasing.
+    const earlierLeg = await prisma.innings.findFirst({
       where: {
         matchId: innings.match.id,
-        isSuperOver: true,
-        number: { lt: innings.number }
+        number: innings.number - 1,
+        isClosed: true
       },
-      orderBy: { number: "desc" },
       select: { totalRuns: true }
     });
-    targetRuns = earlierSuper?.totalRuns ?? null;
+    targetRuns = earlierLeg?.totalRuns ?? null;
   }
 
   // Closure rules:
@@ -224,8 +230,11 @@ export async function POST(
         number: true
       }
     });
-    const regular = closedInnings.filter((i) => !i.isSuperOver);
-    const superOvers = closedInnings.filter((i) => i.isSuperOver);
+    // Identify regular innings (numbers 1 & 2) vs super-over legs (>= 3)
+    // by NUMBER, not by the isSuperOver flag — older buggy data may have
+    // the flag wrongly cleared on a super-over leg.
+    const regular = closedInnings.filter((i) => i.number <= 2);
+    const superOvers = closedInnings.filter((i) => i.number >= 3);
     const regularHome = regular.find(
       (i) => i.battingTeamId === innings.match.homeTeamId
     );
@@ -250,8 +259,8 @@ export async function POST(
 
       let resultText: string | null = null;
 
-      if (!innings.isSuperOver) {
-        // Closure happened in a regular innings.
+      if (innings.number <= 2) {
+        // Closure happened in a regular innings (numbers 1 or 2).
         if (targetReached) {
           // Chase win.
           const wicketsInHand =

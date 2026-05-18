@@ -679,6 +679,15 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
       return false;
     }
 
+    // Parse the server response so we can react immediately to closure or
+    // match completion (e.g. a super-over chase won early — no point
+    // showing the "end of over" banner because the match is already over).
+    const payload = (await res.json().catch(() => ({}))) as {
+      closed?: boolean;
+      matchCompleted?: boolean;
+    };
+    const inningsJustClosed = Boolean(payload?.closed);
+
     // Cricket strike-rotation rule:
     //   swap on odd runs (running between wickets ends with batters crossed)
     //   swap at end of over (batters change ends between overs)
@@ -691,7 +700,12 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
       setNonStrikerId(oldStriker);
     }
 
-    if (overJustEnded) {
+    // Only surface the "end of over" banner when the innings keeps going.
+    // If the ball ALSO closed the innings (chase complete, all out, match
+    // tied/won), skip the banner — the next render will route the page to
+    // the Result / Super-Over starter card and the banner would just be
+    // misleading.
+    if (overJustEnded && !inningsJustClosed) {
       setOverEndedBanner({ overNumber: completedOverNumber });
       // Same bowler can't bowl two overs in a row — force a re-selection.
       setBowlerId("");
