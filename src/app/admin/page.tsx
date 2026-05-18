@@ -1,14 +1,70 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { formatDate } from "@/lib/utils";
+import {
+  ensureAdminUser,
+  getConfiguredAdminEmail
+} from "@/lib/adminBootstrap";
 import { AdminApprovalActions } from "@/components/admin/AdminApprovalActions";
+import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
+import { AdminSignOutButton } from "@/components/admin/AdminSignOutButton";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminDashboardPage() {
-  await requireAdmin();
+/**
+ * /admin
+ *
+ *   - signed out          → render the admin sign-in form
+ *   - signed in (not admin) → show a "not authorised" notice with sign-out
+ *   - signed in as admin  → render the approvals dashboard
+ *
+ * The admin user is auto-created (and demoted alongside any other rogue
+ * ADMINs) on every render via `ensureAdminUser()`, so the env-var-driven
+ * admin credential is always the single source of truth.
+ */
+export default async function AdminPage() {
+  // Make sure exactly one admin exists with the configured credentials.
+  await ensureAdminUser().catch((err) => {
+    console.error("[admin] ensureAdminUser failed:", err);
+  });
 
+  const session = await getServerSession(authOptions);
+  const configuredEmail = getConfiguredAdminEmail();
+
+  if (!session) {
+    return <AdminLoginForm defaultEmail={configuredEmail} />;
+  }
+
+  if (!isAdmin(session.user.role)) {
+    return (
+      <div className="mx-auto max-w-md space-y-4 p-6 text-center">
+        <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-rose-800">
+          Not authorised
+        </span>
+        <h1 className="font-display text-2xl font-extrabold">
+          This area is for the admin only
+        </h1>
+        <p className="text-sm text-ink-600">
+          You&apos;re signed in as{" "}
+          <span className="font-semibold">{session.user.email}</span>. Sign
+          out and use the admin account to continue.
+        </p>
+        <AdminSignOutButton />
+        <p className="text-xs text-ink-500">
+          Organizer? Head to{" "}
+          <Link href="/dashboard" className="font-semibold underline">
+            your dashboard
+          </Link>{" "}
+          instead.
+        </p>
+      </div>
+    );
+  }
+
+  // ─────────────── Admin is signed in: render the dashboard ───────────────
   const [pending, approved, rejected, totals] = await Promise.all([
     prisma.tournament.findMany({
       where: { approvalStatus: "PENDING" },
@@ -46,20 +102,27 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded-full bg-brand-700/10 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-brand-700">
-            Admin
-          </span>
-          <h1 className="font-display text-2xl font-bold sm:text-3xl">
-            Tournament approvals
-          </h1>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-brand-700/10 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-brand-700">
+              Admin
+            </span>
+            <h1 className="font-display text-2xl font-bold sm:text-3xl">
+              Tournament approvals
+            </h1>
+          </div>
+          <p className="mt-1 text-ink-600">
+            Organizer-submitted tournaments stay hidden from the public until
+            you approve them here. You can also see recently approved or
+            rejected entries for context.
+          </p>
+          <p className="mt-1 text-xs text-ink-500">
+            Signed in as{" "}
+            <span className="font-semibold">{session.user.email}</span>
+          </p>
         </div>
-        <p className="text-ink-600">
-          Organizer-submitted tournaments stay hidden from the public until
-          you approve them here. You can also see recently approved or
-          rejected entries for context.
-        </p>
+        <AdminSignOutButton />
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">
