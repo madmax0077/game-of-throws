@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
  *
  *   - a small dark-navy crossguard + pointed tip on the bat (in the same blue
  *     as the silhouette) → turns the bat into a sword
- *   - a small gold crown sitting on the player's head
  *
  * Everything else from the original image is preserved exactly.
  */
@@ -72,74 +71,6 @@ function Badge({ size = 40 }: { size?: number }) {
         <polygon points="42,33  28,36  42,40" />
         {/* Crossguard — perpendicular bar at the blade/handle boundary */}
         <rect x="77" y="20" width="7" height="22" rx="1.5" />
-      </g>
-
-      {/* === CROWN — sits on top of the player's head, replacing the
-              helmet crown so it reads as a royal striker === */}
-      <g transform="translate(70 53)">
-        {/* 5-spire crown body */}
-        <path
-          d="M -12 0
-             L -8 -8
-             L -3 1
-             L 0 -11
-             L 3 1
-             L 8 -8
-             L 12 0
-             L 12 3
-             L -12 3 Z"
-          fill="#f5b73c"
-          stroke="#3a2008"
-          strokeWidth="0.7"
-          strokeLinejoin="round"
-        />
-        {/* Base band */}
-        <rect
-          x="-12"
-          y="3"
-          width="24"
-          height="3.5"
-          rx="0.4"
-          fill="#f5b73c"
-          stroke="#3a2008"
-          strokeWidth="0.5"
-        />
-        {/* Ruby on top spire */}
-        <circle
-          cx="0"
-          cy="-11"
-          r="2"
-          fill="#e51d1d"
-          stroke="#3a2008"
-          strokeWidth="0.4"
-        />
-        <circle cx="-0.5" cy="-11.5" r="0.6" fill="#ffd8d8" opacity="0.85" />
-        {/* Pearls on side spires */}
-        <circle
-          cx="-8"
-          cy="-8"
-          r="1.3"
-          fill="#fff7d4"
-          stroke="#3a2008"
-          strokeWidth="0.3"
-        />
-        <circle
-          cx="8"
-          cy="-8"
-          r="1.3"
-          fill="#fff7d4"
-          stroke="#3a2008"
-          strokeWidth="0.3"
-        />
-        {/* Centre gem on base band */}
-        <circle
-          cx="0"
-          cy="5"
-          r="1.2"
-          fill="#e51d1d"
-          stroke="#3a2008"
-          strokeWidth="0.3"
-        />
       </g>
     </svg>
   );
