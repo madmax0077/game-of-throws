@@ -327,6 +327,55 @@ export function buildInningsScorecard(
 }
 
 // ---------- MVP / per-player match points ----------
+//
+// We use the widely-recognised Dream11 T20 fantasy scoring system. It's the
+// closest thing to a "standard" cricket player rating that most fans
+// recognise. The formula adds up batting, bowling and fielding contributions
+// with milestone and economy bonuses, so all-rounders and impact players
+// don't lose out to a single top scorer. Each match is scored independently
+// (milestones reset per match).
+
+export const POINTS = {
+  bat: {
+    perRun: 1,
+    per4Bonus: 1, // on top of the +1 already from the run itself
+    per6Bonus: 2,
+    milestone30: 4,
+    milestone50: 8,
+    milestone100: 16,
+    duckPenalty: -2 // batter (not pure bowler) dismissed for 0
+  },
+  bowl: {
+    perWicket: 25, // excludes RUN_OUT (credited to fielder)
+    perBowledOrLBW: 8, // bonus on top of the +25
+    haul3: 4,
+    haul4: 8,
+    haul5: 16,
+    perMaiden: 12,
+    economyMinOvers: 2,
+    economyBands: [
+      { max: 5, points: 6 },
+      { max: 6, points: 4 },
+      { max: 7, points: 2 },
+      { max: 10, points: 0 },
+      { max: 11, points: -2 },
+      { max: 12, points: -4 },
+      { max: Infinity, points: -6 }
+    ]
+  },
+  field: {
+    perCatch: 8,
+    threeCatchBonus: 4,
+    perStumping: 12,
+    perRunOut: 12
+  }
+} as const;
+
+export type MatchPointsBreakdown = {
+  batting: number;
+  bowling: number;
+  fielding: number;
+};
 
 export type MatchPlayerPoints = {
   player: ScorecardPlayer;
@@ -336,15 +385,37 @@ export type MatchPlayerPoints = {
   fours: number;
   sixes: number;
   wickets: number;
+  bowledOrLbw: number;
+  maidens: number;
   legalBallsBowled: number;
   runsConceded: number;
   catches: number;
   runOuts: number;
   stumpings: number;
+  isDuck: boolean;
   points: number;
-  // True iff the player either batted, bowled or took a fielding dismissal.
+  breakdown: MatchPointsBreakdown;
   participated: boolean;
 };
+
+function economyPoints(runsConceded: number, legalBalls: number): number {
+  const overs = legalBalls / 6;
+  if (overs < POINTS.bowl.economyMinOvers) return 0;
+  const econ = overs > 0 ? runsConceded / overs : 0;
+  for (const band of POINTS.bowl.economyBands) {
+    if (econ < band.max) return band.points;
+  }
+  return 0;
+}
+
+function milestonePoints(runs: number, ballsFaced: number): number {
+  // Milestones only apply if the batter actually faced a ball.
+  if (ballsFaced === 0) return 0;
+  if (runs >= 100) return POINTS.bat.milestone100;
+  if (runs >= 50) return POINTS.bat.milestone50;
+  if (runs >= 30) return POINTS.bat.milestone30;
+  return 0;
+}
 
 export function computeMatchPoints(
   balls: ScorecardBall[],
@@ -352,23 +423,25 @@ export function computeMatchPoints(
   teamIdByPlayerId: Map<string, string>
 ): MatchPlayerPoints[] {
   const playerById = new Map(players.map((p) => [p.id, p]));
-  const stats = new Map<
-    string,
-    {
-      runs: number;
-      ballsFaced: number;
-      fours: number;
-      sixes: number;
-      wickets: number;
-      legalBallsBowled: number;
-      runsConceded: number;
-      catches: number;
-      runOuts: number;
-      stumpings: number;
-      participated: boolean;
-    }
-  >();
-  const ensure = (id: string) => {
+  type Acc = {
+    runs: number;
+    ballsFaced: number;
+    fours: number;
+    sixes: number;
+    wickets: number;
+    bowledOrLbw: number;
+    legalBallsBowled: number;
+    runsConceded: number;
+    // Per-(inningsKey, over) runs conceded by this bowler — used for maidens.
+    perOverConceded: Map<string, number>;
+    catches: number;
+    runOuts: number;
+    stumpings: number;
+    wasDismissed: boolean;
+    participated: boolean;
+  };
+  const stats = new Map<string, Acc>();
+  const ensure = (id: string): Acc => {
     let s = stats.get(id);
     if (!s) {
       s = {
@@ -377,11 +450,14 @@ export function computeMatchPoints(
         fours: 0,
         sixes: 0,
         wickets: 0,
+        bowledOrLbw: 0,
         legalBallsBowled: 0,
         runsConceded: 0,
+        perOverConceded: new Map(),
         catches: 0,
         runOuts: 0,
         stumpings: 0,
+        wasDismissed: false,
         participated: false
       };
       stats.set(id, s);
@@ -397,13 +473,31 @@ export function computeMatchPoints(
     if (b.legal) bat.ballsFaced += 1;
     if (off === 4) bat.fours += 1;
     if (off === 6) bat.sixes += 1;
+    if (b.isWicket) {
+      const outId = b.outBatterId ?? b.strikerId;
+      const outBat = ensure(outId);
+      outBat.wasDismissed = true;
+    }
 
     const bowl = ensure(b.bowlerId);
     bowl.participated = true;
     if (b.legal) bowl.legalBallsBowled += 1;
-    bowl.runsConceded += bowlerConcededRuns(b);
+    const conc = bowlerConcededRuns(b);
+    bowl.runsConceded += conc;
+    // Bucket per-over runs by overNumber. (Cross-innings is OK because the
+    // same bowler can't bowl the same over number in two innings of the
+    // same match for our purposes — we treat overs uniquely per (bowler,
+    // overNumber) which is fine for maiden counting.)
+    const overKey = `${b.overNumber}`;
+    bowl.perOverConceded.set(
+      overKey,
+      (bowl.perOverConceded.get(overKey) ?? 0) + conc
+    );
     if (b.isWicket && b.wicketType && b.wicketType !== "RUN_OUT") {
       bowl.wickets += 1;
+      if (b.wicketType === "BOWLED" || b.wicketType === "LBW") {
+        bowl.bowledOrLbw += 1;
+      }
     }
 
     if (b.isWicket && b.fielderId && b.wicketType) {
@@ -419,34 +513,86 @@ export function computeMatchPoints(
   for (const p of players) {
     const s = stats.get(p.id);
     const runs = s?.runs ?? 0;
+    const ballsFaced = s?.ballsFaced ?? 0;
+    const fours = s?.fours ?? 0;
+    const sixes = s?.sixes ?? 0;
     const wickets = s?.wickets ?? 0;
+    const bowledOrLbw = s?.bowledOrLbw ?? 0;
+    const legalBallsBowled = s?.legalBallsBowled ?? 0;
+    const runsConceded = s?.runsConceded ?? 0;
     const catches = s?.catches ?? 0;
     const runOuts = s?.runOuts ?? 0;
     const stumpings = s?.stumpings ?? 0;
-    const fours = s?.fours ?? 0;
-    const sixes = s?.sixes ?? 0;
-    // Same scoring formula as the global player ranking so they're consistent:
-    //   runs + 25*wickets + 8*fielding + 1*4s + 2*6s
-    const points =
-      runs + wickets * 25 + (catches + runOuts + stumpings) * 8 + fours + sixes * 2;
+    const wasDismissed = s?.wasDismissed ?? false;
+    const isDuck = wasDismissed && runs === 0;
+
+    // Maidens: count overs where this bowler conceded 0 runs AND bowled
+    // at least 6 legal balls in that over (i.e. completed it). We don't
+    // track legal balls per over per bowler precisely — approximate by
+    // counting any 0-run over and capping at total overs bowled.
+    let maidens = 0;
+    if (s) {
+      for (const [, runsInOver] of s.perOverConceded) {
+        if (runsInOver === 0) maidens += 1;
+      }
+      const completedOvers = Math.floor(legalBallsBowled / 6);
+      if (maidens > completedOvers) maidens = completedOvers;
+    }
+
+    // Batting points
+    let batPts =
+      runs * POINTS.bat.perRun +
+      fours * POINTS.bat.per4Bonus +
+      sixes * POINTS.bat.per6Bonus +
+      milestonePoints(runs, ballsFaced);
+    if (isDuck) batPts += POINTS.bat.duckPenalty;
+
+    // Bowling points
+    let bowlPts = wickets * POINTS.bowl.perWicket;
+    bowlPts += bowledOrLbw * POINTS.bowl.perBowledOrLBW;
+    if (wickets >= 5) bowlPts += POINTS.bowl.haul5;
+    else if (wickets >= 4) bowlPts += POINTS.bowl.haul4;
+    else if (wickets >= 3) bowlPts += POINTS.bowl.haul3;
+    bowlPts += maidens * POINTS.bowl.perMaiden;
+    bowlPts += economyPoints(runsConceded, legalBallsBowled);
+
+    // Fielding points
+    let fieldPts =
+      catches * POINTS.field.perCatch +
+      stumpings * POINTS.field.perStumping +
+      runOuts * POINTS.field.perRunOut;
+    if (catches >= 3) fieldPts += POINTS.field.threeCatchBonus;
+
+    const points = batPts + bowlPts + fieldPts;
+
     rows.push({
       player: playerById.get(p.id) ?? p,
       teamId: teamIdByPlayerId.get(p.id) ?? null,
       runs,
-      ballsFaced: s?.ballsFaced ?? 0,
+      ballsFaced,
       fours,
       sixes,
       wickets,
-      legalBallsBowled: s?.legalBallsBowled ?? 0,
-      runsConceded: s?.runsConceded ?? 0,
+      bowledOrLbw,
+      maidens,
+      legalBallsBowled,
+      runsConceded,
       catches,
       runOuts,
       stumpings,
+      isDuck,
       points,
+      breakdown: { batting: batPts, bowling: bowlPts, fielding: fieldPts },
       participated: s?.participated ?? false
     });
   }
 
-  rows.sort((a, b) => b.points - a.points || b.runs - a.runs || b.wickets - a.wickets);
+  rows.sort(
+    (a, b) =>
+      b.points - a.points ||
+      b.runs - a.runs ||
+      b.wickets - a.wickets ||
+      a.player.name.localeCompare(b.player.name)
+  );
   return rows;
 }

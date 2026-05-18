@@ -175,7 +175,8 @@ export default async function MatchDetail({
           </div>
 
           <p className="mt-6 text-sm text-white/80">
-            {match.tournament.name} • {match.venue} • {match.overs} overs
+            {match.tournament.name}
+            {match.venue ? ` • ${match.venue}` : ""} • {match.overs} overs
           </p>
           {match.resultText && (
             <p className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold">

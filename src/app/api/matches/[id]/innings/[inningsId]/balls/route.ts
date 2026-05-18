@@ -65,25 +65,27 @@ export async function POST(
   const overNumber = Math.floor(legalBallsBefore / 6);
   const ballInOver = (legalBallsBefore % 6) + 1;
 
-  // Bowler quota: a bowler may bowl at most 2 overs in this match. They
-  // are allowed to *finish* an over they have already started, but cannot
-  // *start* a third one. We detect "starting a new over" by checking
-  // whether this bowler has any prior legal balls in the current over.
-  const overStartersForBowler = await prisma.ball.findMany({
-    where: { inningsId: innings.id, bowlerId: data.bowlerId, legal: true },
-    select: { overNumber: true },
-    distinct: ["overNumber"]
-  });
-  const oversAlreadyStarted = overStartersForBowler.map((b) => b.overNumber);
-  const startingNewOver = !oversAlreadyStarted.includes(overNumber);
-  const MAX_OVERS_PER_BOWLER = 2;
-  if (startingNewOver && oversAlreadyStarted.length >= MAX_OVERS_PER_BOWLER) {
-    return NextResponse.json(
-      {
-        error: `This bowler has already bowled ${MAX_OVERS_PER_BOWLER} overs in this match. Pick a different bowler.`
-      },
-      { status: 400 }
-    );
+  // Bowler quota: in regular innings a bowler may bowl at most 2 overs
+  // per match. Super-overs are a special 1-over format and follow ICC
+  // rules — a bowler may bowl that one super over freely, so the regular
+  // cap doesn't apply inside a super over.
+  if (!innings.isSuperOver) {
+    const overStartersForBowler = await prisma.ball.findMany({
+      where: { inningsId: innings.id, bowlerId: data.bowlerId, legal: true },
+      select: { overNumber: true },
+      distinct: ["overNumber"]
+    });
+    const oversAlreadyStarted = overStartersForBowler.map((b) => b.overNumber);
+    const startingNewOver = !oversAlreadyStarted.includes(overNumber);
+    const MAX_OVERS_PER_BOWLER = 2;
+    if (startingNewOver && oversAlreadyStarted.length >= MAX_OVERS_PER_BOWLER) {
+      return NextResponse.json(
+        {
+          error: `This bowler has already bowled ${MAX_OVERS_PER_BOWLER} overs in this match. Pick a different bowler.`
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // Super over: team total is doubled, but Ball.runs stays raw so individual
@@ -144,34 +146,45 @@ export async function POST(
     });
   }
 
-  // For a 2nd innings we also need to know the first-innings total so the
-  // chase can be closed the instant the target is overhauled.
-  let firstInningsRuns: number | null = null;
-  if (innings.number === 2) {
+  // What total does the current innings need to overhaul to "reach the
+  // target"? For a regular 2nd innings it's the regular 1st innings total.
+  // For a super-over chase it's the previous super-over innings (the team
+  // batting first in the super over).
+  let targetRuns: number | null = null;
+  if (!innings.isSuperOver && innings.number === 2) {
     const first = await prisma.innings.findFirst({
-      where: { matchId: innings.match.id, number: 1 },
+      where: { matchId: innings.match.id, number: 1, isSuperOver: false },
       select: { totalRuns: true }
     });
-    firstInningsRuns = first?.totalRuns ?? null;
+    targetRuns = first?.totalRuns ?? null;
+  } else if (innings.isSuperOver) {
+    // If there is an EARLIER super-over innings, this is the chase leg.
+    const earlierSuper = await prisma.innings.findFirst({
+      where: {
+        matchId: innings.match.id,
+        isSuperOver: true,
+        number: { lt: innings.number }
+      },
+      orderBy: { number: "desc" },
+      select: { totalRuns: true }
+    });
+    targetRuns = earlierSuper?.totalRuns ?? null;
   }
 
   // Closure rules:
-  //   1) All overs bowled (totalBalls >= match.overs * 6)
-  //   2) All out — need at least 2 batters left, so wickets >= players - 1
-  //   3) Target reached — chasing side (innings 2 only) has overtaken
-  //      the first-innings total. Match is decided, no point bowling
-  //      the remaining overs.
-  const overLimitReached = updatedInnings.totalBalls >= innings.match.overs * 6;
+  //   1) All overs bowled — for super overs the cap is always 1 over (6 balls).
+  //   2) All out — need at least 2 batters left, so wickets >= players - 1.
+  //      Super overs end on 2 wickets (3 batters in a super over) — same rule
+  //      since each team only fields 3 in the super.
+  //   3) Target reached — current innings has overhauled the side it's
+  //      chasing (regular 1st innings, or previous super-over innings).
+  const inningsOverLimitBalls = innings.isSuperOver ? 6 : innings.match.overs * 6;
+  const overLimitReached = updatedInnings.totalBalls >= inningsOverLimitBalls;
   const allOut =
     battingTeamPlayerCount >= 2 &&
     updatedInnings.totalWickets >= battingTeamPlayerCount - 1;
-  // IMPORTANT: only the 2nd innings can "reach the target". Guarding by
-  // innings.number prevents any accidental misuse if firstInningsRuns is
-  // ever populated for a non-chase context.
   const targetReached =
-    innings.number === 2 &&
-    firstInningsRuns !== null &&
-    updatedInnings.totalRuns > firstInningsRuns;
+    targetRuns !== null && updatedInnings.totalRuns > targetRuns;
 
   let closed = false;
   let closureReason:
@@ -186,77 +199,106 @@ export async function POST(
       data: { isClosed: true }
     });
     closed = true;
-    // Target reached trumps the other reasons — a winning hit on the last
-    // legal ball of the over is still a chase-win, not an "overs completed".
     closureReason = targetReached
       ? "TARGET_REACHED"
       : overLimitReached
       ? "OVERS_COMPLETED"
       : "ALL_OUT";
 
-    // Match-completion check: both teams must have at least one CLOSED innings.
-    // (The innings we just closed is included via the OR clause below.)
+    // Decide whether the MATCH is now complete. The rule is:
+    //   - Both teams must have batted at least once (regular innings).
+    //   - If regular totals are equal AND no super-over has been played
+    //     yet, we DO NOT complete the match — a super over is required.
+    //   - If a super over has been played and both super-over innings are
+    //     closed, the team with the higher super-over total wins. If the
+    //     super-over totals are also equal, another super over is needed
+    //     (so we leave the match LIVE).
     const closedInnings = await prisma.innings.findMany({
       where: { matchId: innings.match.id, isClosed: true },
-      select: { battingTeamId: true, totalRuns: true }
+      orderBy: { number: "asc" },
+      select: {
+        battingTeamId: true,
+        totalRuns: true,
+        totalWickets: true,
+        isSuperOver: true,
+        number: true
+      }
     });
-    const homeClosed = closedInnings.some(
+    const regular = closedInnings.filter((i) => !i.isSuperOver);
+    const superOvers = closedInnings.filter((i) => i.isSuperOver);
+    const regularHome = regular.find(
       (i) => i.battingTeamId === innings.match.homeTeamId
     );
-    const awayClosed = closedInnings.some(
+    const regularAway = regular.find(
       (i) => i.battingTeamId === innings.match.awayTeamId
     );
 
-    if (homeClosed && awayClosed && innings.match.status !== "COMPLETED") {
-      // Compute a simple result string. Multi-innings totals are summed in case
-      // a team somehow has more than one closed innings (future-proofing).
-      const homeTotal = closedInnings
-        .filter((i) => i.battingTeamId === innings.match.homeTeamId)
-        .reduce((s, i) => s + i.totalRuns, 0);
-      const awayTotal = closedInnings
-        .filter((i) => i.battingTeamId === innings.match.awayTeamId)
-        .reduce((s, i) => s + i.totalRuns, 0);
+    const teams = await prisma.team.findMany({
+      where: { id: { in: [innings.match.homeTeamId, innings.match.awayTeamId] } },
+      select: { id: true, shortName: true }
+    });
+    const homeShort =
+      teams.find((t) => t.id === innings.match.homeTeamId)?.shortName ?? "Home";
+    const awayShort =
+      teams.find((t) => t.id === innings.match.awayTeamId)?.shortName ?? "Away";
+    const shortFor = (teamId: string) =>
+      teamId === innings.match.homeTeamId ? homeShort : awayShort;
 
-      // Need the short names for the result text.
-      const teams = await prisma.team.findMany({
-        where: { id: { in: [innings.match.homeTeamId, innings.match.awayTeamId] } },
-        select: { id: true, shortName: true }
-      });
-      const homeShort =
-        teams.find((t) => t.id === innings.match.homeTeamId)?.shortName ?? "Home";
-      const awayShort =
-        teams.find((t) => t.id === innings.match.awayTeamId)?.shortName ?? "Away";
+    if (regularHome && regularAway && innings.match.status !== "COMPLETED") {
+      const homeReg = regularHome.totalRuns;
+      const awayReg = regularAway.totalRuns;
 
-      let resultText: string;
-      if (targetReached) {
-        // Chasing team (current innings' batting team) won. Conventional
-        // cricket: "X won by N wickets" where N = wickets in hand.
-        const wicketsInHand =
-          battingTeamPlayerCount >= 2
-            ? Math.max(0, battingTeamPlayerCount - 1 - updatedInnings.totalWickets)
-            : 0;
-        const chasingShort =
-          innings.battingTeamId === innings.match.homeTeamId
-            ? homeShort
-            : awayShort;
-        resultText = `${chasingShort} won by ${wicketsInHand} wicket${
-          wicketsInHand === 1 ? "" : "s"
-        }`;
-      } else if (homeTotal > awayTotal) {
-        const diff = homeTotal - awayTotal;
-        resultText = `${homeShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
-      } else if (awayTotal > homeTotal) {
-        const diff = awayTotal - homeTotal;
-        resultText = `${awayShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
+      let resultText: string | null = null;
+
+      if (!innings.isSuperOver) {
+        // Closure happened in a regular innings.
+        if (targetReached) {
+          // Chase win.
+          const wicketsInHand =
+            battingTeamPlayerCount >= 2
+              ? Math.max(0, battingTeamPlayerCount - 1 - updatedInnings.totalWickets)
+              : 0;
+          const chasingShort = shortFor(innings.battingTeamId);
+          resultText = `${chasingShort} won by ${wicketsInHand} wicket${
+            wicketsInHand === 1 ? "" : "s"
+          }`;
+        } else if (homeReg > awayReg) {
+          const diff = homeReg - awayReg;
+          resultText = `${homeShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
+        } else if (awayReg > homeReg) {
+          const diff = awayReg - homeReg;
+          resultText = `${awayShort} won by ${diff} run${diff === 1 ? "" : "s"}`;
+        } else {
+          // TIE — leave the match LIVE so a super over can be started.
+          resultText = null;
+        }
       } else {
-        resultText = "Match tied";
+        // Closure happened in a super-over innings. We complete the match
+        // ONLY when both super-over legs of the LATEST super over are done.
+        // superOvers is ordered by innings number; the latest pair are the
+        // last two entries IF that count is even AND both legs share the
+        // same "super-over round".
+        if (superOvers.length >= 2 && superOvers.length % 2 === 0) {
+          const last = superOvers[superOvers.length - 1];
+          const second = superOvers[superOvers.length - 2];
+          if (last.totalRuns > second.totalRuns) {
+            resultText = `${shortFor(last.battingTeamId)} won the super over`;
+          } else if (second.totalRuns > last.totalRuns) {
+            resultText = `${shortFor(second.battingTeamId)} won the super over`;
+          } else {
+            // Super over also tied — another one is needed; stay LIVE.
+            resultText = null;
+          }
+        }
       }
 
-      await prisma.match.update({
-        where: { id: innings.match.id },
-        data: { status: "COMPLETED", resultText }
-      });
-      matchCompleted = true;
+      if (resultText) {
+        await prisma.match.update({
+          where: { id: innings.match.id },
+          data: { status: "COMPLETED", resultText }
+        });
+        matchCompleted = true;
+      }
     }
   }
 

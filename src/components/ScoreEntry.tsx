@@ -58,21 +58,32 @@ export function ScoreEntry({ match }: { match: Match }) {
   const router = useRouter();
   const currentInnings = match.innings.find((i) => !i.isClosed);
 
-  if (!currentInnings) {
-    // Match is complete when both teams have at least one CLOSED innings.
-    const homeClosed = match.innings.some(
-      (i) => i.isClosed && i.battingTeamId === match.homeTeam.id
-    );
-    const awayClosed = match.innings.some(
-      (i) => i.isClosed && i.battingTeamId === match.awayTeam.id
-    );
-    if (homeClosed && awayClosed) {
-      return <MatchResult match={match} />;
-    }
-    return <InningsStarter match={match} onStarted={() => router.refresh()} />;
+  if (currentInnings) {
+    return <BallByBall match={match} innings={currentInnings} />;
   }
 
-  return <BallByBall match={match} innings={currentInnings} />;
+  // No open innings. Decide what comes next:
+  //   1. Match already COMPLETED on the server → show the result card.
+  //   2. Neither team or only one has batted → start the next regular innings.
+  //   3. Both teams have batted but match is still LIVE → it's a tie waiting
+  //      on a super over (or a super over that itself tied) → show the
+  //      Super Over starter.
+  if (match.status === "COMPLETED") {
+    return <MatchResult match={match} />;
+  }
+
+  const homeClosed = match.innings.some(
+    (i) => i.isClosed && i.battingTeamId === match.homeTeam.id
+  );
+  const awayClosed = match.innings.some(
+    (i) => i.isClosed && i.battingTeamId === match.awayTeam.id
+  );
+
+  if (homeClosed && awayClosed) {
+    return <SuperOverStarter match={match} onStarted={() => router.refresh()} />;
+  }
+
+  return <InningsStarter match={match} onStarted={() => router.refresh()} />;
 }
 
 /* -------------------- Match result -------------------- */
@@ -376,6 +387,155 @@ function InningsStarter({
         >
           {submitting ? "Starting..." : "Start innings"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- Super Over starter -------------------- */
+
+// Shown only when the match is tied (regular innings done, scores level)
+// or when a super over itself tied. The scorer picks which team bats first
+// in the (next) super over. Each super over is exactly 1 over for both
+// sides; the API enforces this independently.
+function SuperOverStarter({
+  match,
+  onStarted
+}: {
+  match: Match;
+  onStarted: () => void;
+}) {
+  // Pick a sensible default: whichever team bowled in the previous innings
+  // typically bats first in the next super over. Default to the home team
+  // if nothing better is available, and let the scorer change it.
+  const lastClosed = [...match.innings]
+    .filter((i) => i.isClosed)
+    .sort((a, b) => a.number - b.number)
+    .pop();
+  const lastBowlingTeamId =
+    lastClosed?.bowlingTeamId ?? match.homeTeam.id;
+
+  const [battingTeamId, setBattingTeamId] = useState<string>(lastBowlingTeamId);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nextNumber = match.innings.length + 1;
+  const superOversPlayed = match.innings.filter((i) => i.isSuperOver).length;
+
+  // Compute the regular-innings totals so we can show "Match tied — A & B
+  // both finished on N runs" in the header.
+  const regularByTeam = (teamId: string) =>
+    match.innings
+      .filter((i) => i.isClosed && !i.isSuperOver && i.battingTeamId === teamId)
+      .reduce((s, i) => s + i.totalRuns, 0);
+  const homeReg = regularByTeam(match.homeTeam.id);
+  const awayReg = regularByTeam(match.awayTeam.id);
+
+  // Latest super-over pair (for when a super over itself tied)
+  const superOverRuns = (teamId: string) => {
+    const supers = match.innings
+      .filter((i) => i.isClosed && i.isSuperOver && i.battingTeamId === teamId)
+      .sort((a, b) => a.number - b.number);
+    return supers.length > 0 ? supers[supers.length - 1].totalRuns : null;
+  };
+  const homeSuper = superOverRuns(match.homeTeam.id);
+  const awaySuper = superOverRuns(match.awayTeam.id);
+
+  const isFirstSuper = superOversPlayed === 0;
+
+  async function start() {
+    setSubmitting(true);
+    setError(null);
+    const bowlingTeamId =
+      battingTeamId === match.homeTeam.id
+        ? match.awayTeam.id
+        : match.homeTeam.id;
+    const res = await fetch(`/api/matches/${match.id}/innings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        number: nextNumber,
+        battingTeamId,
+        bowlingTeamId,
+        isSuperOver: true
+      })
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not start the super over.");
+      return;
+    }
+    onStarted();
+  }
+
+  return (
+    <div className="max-w-xl space-y-4">
+      <Link
+        href={`/matches/${match.id}`}
+        className="text-sm text-brand-700 hover:underline"
+      >
+        ← Back to match
+      </Link>
+
+      <div className="card overflow-hidden p-0">
+        <div className="bg-gradient-to-br from-amber-500 to-amber-700 p-6 text-white">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-100">
+            {isFirstSuper ? "Match tied" : "Super over tied"}
+          </p>
+          <h1 className="mt-2 font-display text-2xl font-extrabold">
+            {isFirstSuper
+              ? `Start the Super Over`
+              : `Another Super Over needed`}
+          </h1>
+          <p className="mt-1 text-sm text-amber-50">
+            {isFirstSuper
+              ? `Both teams finished on ${homeReg} runs. One over each decides it.`
+              : homeSuper !== null && awaySuper !== null
+              ? `Latest super over: ${match.homeTeam.shortName} ${homeSuper} · ${match.awayTeam.shortName} ${awaySuper}. Play another.`
+              : "Latest super over ended level. Play another."}
+          </p>
+        </div>
+
+        <div className="p-5">
+          <p className="text-sm font-semibold text-ink-700">
+            Who bats first this super over?
+          </p>
+          <p className="mt-1 text-xs text-ink-500">
+            Each team bats one over (6 legal balls) with up to 2 wickets in
+            hand. Bowler quota does not apply inside a super over.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[match.homeTeam, match.awayTeam].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setBattingTeamId(t.id)}
+                className={`rounded-xl border p-4 text-left transition ${
+                  battingTeamId === t.id
+                    ? "border-amber-500 bg-amber-50"
+                    : "border-ink-200 hover:border-amber-200"
+                }`}
+              >
+                <p className="font-display font-bold">{t.name}</p>
+                <p className="text-xs text-ink-500">Bats first</p>
+              </button>
+            ))}
+          </div>
+
+          {error && (
+            <p className="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800">
+              {error}
+            </p>
+          )}
+
+          <button
+            onClick={start}
+            disabled={submitting || !battingTeamId}
+            className="mt-5 inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-bold text-white shadow hover:bg-amber-600 disabled:opacity-60"
+          >
+            {submitting ? "Starting..." : "Start Super Over"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -733,7 +893,10 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             atOverBoundary={atOverBoundary}
             blockedBowlerId={innings.previousOverBowlerId}
             oversByBowler={innings.bowlerOversCount}
-            maxOvers={MAX_OVERS_PER_BOWLER}
+            // The 2-overs-per-match cap does not apply inside a super over —
+            // any bowler may be picked there. Pass Infinity to effectively
+            // disable the client-side cap when scoring a super over.
+            maxOvers={innings.isSuperOver ? Infinity : MAX_OVERS_PER_BOWLER}
           />
         </div>
       </section>

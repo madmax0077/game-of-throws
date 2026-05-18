@@ -30,7 +30,13 @@ export function MvpPanel({
       <header className="border-b border-ink-100 p-5">
         <h2 className="font-display text-lg font-bold">Player of the match</h2>
         <p className="mt-1 text-xs text-ink-500">
-          Points = runs + 25 x wickets + 8 x fielding dismissals + boundary bonuses.
+          Points use the standard Dream11 T20 cricket scoring system —{" "}
+          <span className="font-semibold">+1</span> per run,{" "}
+          <span className="font-semibold">+4/+8/+16</span> for 30/50/100,{" "}
+          <span className="font-semibold">+25</span> per wicket,{" "}
+          <span className="font-semibold">+12</span> per maiden / run-out /
+          stumping, <span className="font-semibold">+8</span> per catch, with
+          economy and duck adjustments.
         </p>
       </header>
 

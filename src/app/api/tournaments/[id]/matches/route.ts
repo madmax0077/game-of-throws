@@ -7,7 +7,9 @@ import { prisma } from "@/lib/prisma";
 const CreateSchema = z.object({
   homeTeamId: z.string(),
   awayTeamId: z.string(),
-  venue: z.string().min(2).max(120),
+  // Venue is no longer collected from the scorer — kept optional so any older
+  // clients that still send it continue to work.
+  venue: z.string().max(120).optional(),
   scheduledAt: z.string().optional(), // ISO; defaults to now
   overs: z.number().int().min(1).max(50).optional()
 });
@@ -47,7 +49,9 @@ export async function POST(
       tournamentId: params.id,
       homeTeamId: data.homeTeamId,
       awayTeamId: data.awayTeamId,
-      venue: data.venue,
+      // Venue is no longer collected — store empty string so legacy NOT-NULL
+      // columns continue to work without a schema migration.
+      venue: data.venue ?? "",
       scheduledAt,
       overs: data.overs ?? tournament.overs
     }

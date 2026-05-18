@@ -255,7 +255,8 @@ export default async function WatchMatchPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs uppercase tracking-wider text-ink-500">
-              {match.tournament.name} • {match.venue}
+              {match.tournament.name}
+              {match.venue ? ` • ${match.venue}` : ""}
             </p>
             <h1 className="font-display text-2xl font-extrabold text-ink-900 sm:text-3xl">
               {match.homeTeam.name} vs {match.awayTeam.name}

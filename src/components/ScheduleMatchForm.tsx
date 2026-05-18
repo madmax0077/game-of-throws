@@ -18,7 +18,6 @@ export function ScheduleMatchForm({
   const [open, setOpen] = useState(false);
   const [homeTeamId, setHomeTeamId] = useState("");
   const [awayTeamId, setAwayTeamId] = useState("");
-  const [venue, setVenue] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [overs, setOvers] = useState<number>(defaultOvers);
   const [busy, setBusy] = useState(false);
@@ -34,7 +33,6 @@ export function ScheduleMatchForm({
       body: JSON.stringify({
         homeTeamId,
         awayTeamId,
-        venue,
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
         overs
       })
@@ -102,18 +100,6 @@ export function ScheduleMatchForm({
               </option>
             ))}
         </select>
-      </div>
-      <div>
-        <label className="label" htmlFor="venue">Venue</label>
-        <input
-          id="venue"
-          required
-          minLength={2}
-          value={venue}
-          onChange={(e) => setVenue(e.target.value)}
-          className="input"
-          placeholder="Wankhede Stadium"
-        />
       </div>
       <div>
         <label className="label" htmlFor="overs">Overs per innings</label>

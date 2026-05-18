@@ -408,7 +408,9 @@ export default async function TournamentDetailPage({
                     <p className="text-sm font-semibold">
                       {m.homeTeam.name} vs {m.awayTeam.name}
                     </p>
-                    <p className="text-xs text-ink-500">{m.venue}</p>
+                    {m.venue ? (
+                      <p className="text-xs text-ink-500">{m.venue}</p>
+                    ) : null}
                   </div>
                 </div>
                 <span
