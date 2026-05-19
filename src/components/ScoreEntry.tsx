@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatOvers } from "@/lib/utils";
 import { ballPillText, ballPillColor } from "@/lib/ballLabel";
+import { isDedicatedSuperOverInnings } from "@/lib/inningsRules";
 
 type Player = { id: string; name: string };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -26,6 +27,7 @@ type Innings = {
   totalBalls: number;
   isClosed: boolean;
   isSuperOver: boolean;
+  superOverOneActive: boolean;
   dismissedBatterIds: string[];
   previousOverBowlerId: string | null;
   // distinct overs each bowler in the bowling team has bowled so far
@@ -187,7 +189,7 @@ function MatchResult({ match }: { match: Match }) {
                 >
                   <span>
                     <b>Innings {inn.number}</b> · {team.name}
-                    {inn.isSuperOver ? " · Super Over" : ""}
+                    {isDedicatedSuperOverInnings(inn) ? " · Super Over" : ""}
                   </span>
                   <span className="font-display font-bold">
                     {inn.totalRuns}/{inn.totalWickets}{" "}
@@ -308,7 +310,7 @@ function InningsStarter({
                 >
                   <span>
                     <b>Innings {inn.number}</b> · {team.name}
-                    {inn.isSuperOver ? " · Super Over" : ""}
+                    {isDedicatedSuperOverInnings(inn) ? " · Super Over" : ""}
                   </span>
                   <span className="font-display font-bold text-emerald-900">
                     {inn.totalRuns}/{inn.totalWickets}{" "}
@@ -370,8 +372,8 @@ function InningsStarter({
         )}
 
         <p className="mt-5 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
-          You can enable <b>Super Over</b> from the scoring board once the
-          innings starts (only at the beginning of an over).
+          During scoring you can enable <b>Super Over 1</b> at the start of any
+          over — only that over&apos;s runs count double on the team total.
         </p>
 
         {error && (
@@ -419,13 +421,13 @@ function SuperOverStarter({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextNumber = match.innings.length + 1;
-  const superOversPlayed = match.innings.filter((i) => i.isSuperOver).length;
+  const superOversPlayed = match.innings.filter((i) => i.number >= 3).length;
 
   // Compute the regular-innings totals so we can show "Match tied — A & B
   // both finished on N runs" in the header.
   const regularByTeam = (teamId: string) =>
     match.innings
-      .filter((i) => i.isClosed && !i.isSuperOver && i.battingTeamId === teamId)
+      .filter((i) => i.isClosed && i.number <= 2 && i.battingTeamId === teamId)
       .reduce((s, i) => s + i.totalRuns, 0);
   const homeReg = regularByTeam(match.homeTeam.id);
   const awayReg = regularByTeam(match.awayTeam.id);
@@ -433,7 +435,7 @@ function SuperOverStarter({
   // Latest super-over pair (for when a super over itself tied)
   const superOverRuns = (teamId: string) => {
     const supers = match.innings
-      .filter((i) => i.isClosed && i.isSuperOver && i.battingTeamId === teamId)
+      .filter((i) => i.isClosed && i.number >= 3 && i.battingTeamId === teamId)
       .sort((a, b) => a.number - b.number);
     return supers.length > 0 ? supers[supers.length - 1].totalRuns : null;
   };
@@ -541,6 +543,87 @@ function SuperOverStarter({
   );
 }
 
+/* -------------------- Super Over 1 toggle (regular innings) -------------------- */
+
+function SuperOverOneToggle({
+  matchId,
+  inningsId,
+  active,
+  canEnable,
+  onChanged
+}: {
+  matchId: string;
+  inningsId: string;
+  active: boolean;
+  canEnable: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function setActive(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/matches/${matchId}/innings/${inningsId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ superOverOneActive: next })
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Could not update Super Over 1.");
+      return;
+    }
+    onChanged();
+  }
+
+  if (active) {
+    return (
+      <div className="card border-violet-300 bg-violet-50 p-4">
+        <p className="font-display text-sm font-bold text-violet-900">
+          Super Over 1 active
+        </p>
+        <p className="mt-1 text-sm text-violet-800">
+          Team score from this over counts <b>double</b>. Player stats stay at
+          face value. Turns off automatically when the over ends.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setActive(false)}
+          className="mt-3 text-xs font-semibold text-violet-800 underline hover:text-violet-950 disabled:opacity-60"
+        >
+          Cancel Super Over 1
+        </button>
+        {error && <p className="mt-2 text-xs text-brand-800">{error}</p>}
+      </div>
+    );
+  }
+
+  if (!canEnable) return null;
+
+  return (
+    <div className="card border-violet-200 bg-violet-50/80 p-4">
+      <p className="font-display text-sm font-bold text-violet-900">
+        Super Over 1
+      </p>
+      <p className="mt-1 text-sm text-violet-800">
+        Double the <b>team total</b> for this over only (not the whole innings).
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setActive(true)}
+        className="mt-3 inline-flex items-center justify-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-violet-700 disabled:opacity-60"
+      >
+        {busy ? "Enabling…" : "Enable Super Over 1 (2× this over)"}
+      </button>
+      {error && <p className="mt-2 text-xs text-brand-800">{error}</p>}
+    </div>
+  );
+}
+
 /* -------------------- Ball-by-ball entry -------------------- */
 
 function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
@@ -582,29 +665,11 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
   // not yet started. The previous over's bowler cannot bowl again here.
   const atOverBoundary = innings.totalBalls > 0 && innings.totalBalls % 6 === 0;
 
-  // Super-over toggle is only allowed at the start of an over: either before
-  // any ball is bowled or once a full over has just completed.
-  const canToggleSuperOver = innings.totalBalls === 0 || atOverBoundary;
-
-  async function toggleSuperOver() {
-    if (!canToggleSuperOver || busy) return;
-    setBusy(true);
-    const res = await fetch(
-      `/api/matches/${match.id}/innings/${innings.id}`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ isSuperOver: !innings.isSuperOver })
-      }
-    );
-    setBusy(false);
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      alert(d.error || "Could not toggle Super Over.");
-      return;
-    }
-    router.refresh();
-  }
+  const dedicatedSuperOver = isDedicatedSuperOverInnings(innings);
+  const canEnableSuperOverOne =
+    !dedicatedSuperOver &&
+    innings.totalBalls % 6 === 0 &&
+    !innings.superOverOneActive;
 
   // Eligible incoming batters = team players minus current pair minus already-dismissed.
   const availableNewBatters = useMemo(() => {
@@ -809,6 +874,16 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
         ← Back to match
       </Link>
 
+      {(canEnableSuperOverOne || innings.superOverOneActive) && (
+        <SuperOverOneToggle
+          matchId={match.id}
+          inningsId={innings.id}
+          active={innings.superOverOneActive}
+          canEnable={canEnableSuperOverOne}
+          onChanged={() => router.refresh()}
+        />
+      )}
+
       {overEndedBanner && (
         <div
           role="status"
@@ -852,12 +927,16 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             <p className="text-xs uppercase tracking-wider text-white/70">
               Innings {innings.number} • {battingTeam.name} batting
             </p>
-            <SuperOverToggle
-              enabled={innings.isSuperOver}
-              canToggle={canToggleSuperOver}
-              busy={busy}
-              onToggle={toggleSuperOver}
-            />
+            {dedicatedSuperOver && (
+              <span className="rounded-full bg-amber-400/90 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
+                Super over
+              </span>
+            )}
+            {!dedicatedSuperOver && innings.superOverOneActive && (
+              <span className="rounded-full bg-violet-400/90 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-violet-950">
+                Super over 1 · 2×
+              </span>
+            )}
           </div>
           <p className="mt-2 font-display text-4xl font-extrabold">
             {innings.totalRuns}/{innings.totalWickets}
@@ -910,7 +989,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             // The 2-overs-per-match cap does not apply inside a super over —
             // any bowler may be picked there. Pass Infinity to effectively
             // disable the client-side cap when scoring a super over.
-            maxOvers={innings.isSuperOver ? Infinity : MAX_OVERS_PER_BOWLER}
+            maxOvers={dedicatedSuperOver ? Infinity : MAX_OVERS_PER_BOWLER}
           />
         </div>
       </section>
@@ -1258,57 +1337,6 @@ function BatterChoice({
       }`}
     >
       {label}
-    </button>
-  );
-}
-
-function SuperOverToggle({
-  enabled,
-  canToggle,
-  busy,
-  onToggle
-}: {
-  enabled: boolean;
-  canToggle: boolean;
-  busy: boolean;
-  onToggle: () => void;
-}) {
-  if (enabled) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={!canToggle || busy}
-        title={
-          canToggle
-            ? "Click to turn off Super Over"
-            : "Super Over can only be changed at the start of an over"
-        }
-        className="inline-flex items-center gap-2 rounded-full bg-amber-300 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-amber-950 transition hover:bg-amber-200 disabled:opacity-70"
-      >
-        <span>Super Over · 2× score</span>
-        {canToggle && <span aria-hidden>×</span>}
-      </button>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={!canToggle || busy}
-      title={
-        canToggle
-          ? "Enable Super Over for this over onwards"
-          : "Super Over can only be enabled at the start of an over"
-      }
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider transition ${
-        canToggle
-          ? "bg-white/15 text-white hover:bg-white/25"
-          : "bg-white/5 text-white/40 cursor-not-allowed"
-      }`}
-    >
-      <span aria-hidden>+</span> Super Over
-      {!canToggle && <span className="font-medium normal-case tracking-normal">(between overs only)</span>}
     </button>
   );
 }

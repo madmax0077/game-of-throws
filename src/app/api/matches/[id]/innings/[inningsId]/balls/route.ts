@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  ballTeamRunsMultiplier,
+  inningsOverLimitBalls,
+  isAllOut,
+  isDedicatedSuperOverInnings
+} from "@/lib/inningsRules";
 
 // Wicket types that require a fielder to be credited:
 //   CAUGHT   → catcher
@@ -66,10 +72,8 @@ export async function POST(
   const ballInOver = (legalBallsBefore % 6) + 1;
 
   // Bowler quota: in regular innings a bowler may bowl at most 2 overs
-  // per match. Super-overs are a special 1-over format and follow ICC
-  // rules — a bowler may bowl that one super over freely, so the regular
-  // cap doesn't apply inside a super over.
-  if (!innings.isSuperOver) {
+  // per match. Dedicated super-over legs have no per-bowler cap.
+  if (!isDedicatedSuperOverInnings(innings)) {
     const overStartersForBowler = await prisma.ball.findMany({
       where: { inningsId: innings.id, bowlerId: data.bowlerId, legal: true },
       select: { overNumber: true },
@@ -88,13 +92,13 @@ export async function POST(
     }
   }
 
-  // Super over: team total is doubled, but Ball.runs stays raw so individual
-  // batter/bowler stats remain accurate.
-  const teamScoreMultiplier = innings.isSuperOver ? 2 : 1;
+  const scoreMultiplier = ballTeamRunsMultiplier(innings);
   const rawRuns = data.runs + (data.extraRuns ?? 0);
-  const totalAddedRuns = rawRuns * teamScoreMultiplier;
+  const totalAddedRuns = rawRuns * scoreMultiplier;
   const wicketIncrement = data.isWicket ? 1 : 0;
   const ballIncrement = data.legal ? 1 : 0;
+  const overEndsAfterThisBall =
+    data.legal && ballIncrement > 0 && (legalBallsBefore + ballIncrement) % 6 === 0;
 
   // Need the batting team's player count to know when "all out" triggers.
   const battingTeamPlayerCount = await prisma.player.count({
@@ -118,7 +122,8 @@ export async function POST(
         bowlerId: data.bowlerId,
         outBatterId: data.outBatterId ?? null,
         fielderId: data.fielderId ?? null,
-        commentary: data.commentary ?? null
+        commentary: data.commentary ?? null,
+        teamRunsMultiplier: scoreMultiplier
       }
     }),
     prisma.innings.update({
@@ -126,29 +131,13 @@ export async function POST(
       data: {
         totalRuns: { increment: totalAddedRuns },
         totalWickets: { increment: wicketIncrement },
-        totalBalls: { increment: ballIncrement }
+        totalBalls: { increment: ballIncrement },
+        ...(overEndsAfterThisBall && innings.superOverOneActive
+          ? { superOverOneActive: false }
+          : {})
       }
     })
   ]);
-
-  // Super Over auto-disable: the original feature let scorers toggle a
-  // "this over only" 2x multiplier inside a regular innings. At the end of
-  // that over the flag flips off so the next over scores normally.
-  //
-  // IMPORTANT: a dedicated Super-Over INNINGS (innings.number > 2) is a
-  // different beast — the entire innings is a super over and we must keep
-  // the flag on so the chasing leg can find it as the "earlier super
-  // over" to set its target. Only auto-disable for regular innings 1 & 2.
-  const overJustEnded =
-    data.legal &&
-    updatedInnings.totalBalls > 0 &&
-    updatedInnings.totalBalls % 6 === 0;
-  if (overJustEnded && innings.isSuperOver && innings.number <= 2) {
-    await prisma.innings.update({
-      where: { id: innings.id },
-      data: { isSuperOver: false }
-    });
-  }
 
   // What total does the current innings need to overhaul to "reach the
   // target"? For a regular 2nd innings it's the regular 1st innings total.
@@ -157,13 +146,13 @@ export async function POST(
   // filtering by isSuperOver here because an older bug could have flipped
   // that flag off on the preceding leg.
   let targetRuns: number | null = null;
-  if (!innings.isSuperOver && innings.number === 2) {
+  if (!isDedicatedSuperOverInnings(innings) && innings.number === 2) {
     const first = await prisma.innings.findFirst({
       where: { matchId: innings.match.id, number: 1 },
       select: { totalRuns: true }
     });
     targetRuns = first?.totalRuns ?? null;
-  } else if (innings.isSuperOver && innings.number >= 4) {
+  } else if (isDedicatedSuperOverInnings(innings) && innings.number >= 4) {
     // Super-over legs are always scheduled back-to-back, so the immediate
     // predecessor (number - 1) is the leg we're chasing.
     const earlierLeg = await prisma.innings.findFirst({
@@ -178,17 +167,16 @@ export async function POST(
   }
 
   // Closure rules:
-  //   1) All overs bowled — for super overs the cap is always 1 over (6 balls).
-  //   2) All out — need at least 2 batters left, so wickets >= players - 1.
-  //      Super overs end on 2 wickets (3 batters in a super over) — same rule
-  //      since each team only fields 3 in the super.
-  //   3) Target reached — current innings has overhauled the side it's
-  //      chasing (regular 1st innings, or previous super-over innings).
-  const inningsOverLimitBalls = innings.isSuperOver ? 6 : innings.match.overs * 6;
-  const overLimitReached = updatedInnings.totalBalls >= inningsOverLimitBalls;
-  const allOut =
-    battingTeamPlayerCount >= 2 &&
-    updatedInnings.totalWickets >= battingTeamPlayerCount - 1;
+  //   1) All overs bowled — dedicated super-over legs: 6 legal balls only.
+  //   2) All out — regular: wickets >= squad size - 1; super over: max 2 wickets.
+  //   3) Target reached — chase innings overhauled the target total.
+  const overLimitBalls = inningsOverLimitBalls(innings, innings.match.overs);
+  const overLimitReached = updatedInnings.totalBalls >= overLimitBalls;
+  const allOut = isAllOut(
+    updatedInnings.totalWickets,
+    battingTeamPlayerCount,
+    innings
+  );
   const targetReached =
     targetRuns !== null && updatedInnings.totalRuns > targetRuns;
 

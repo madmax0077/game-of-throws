@@ -15,6 +15,7 @@ import { Logo } from "@/components/Logo";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 import { MatchScorecard } from "@/components/MatchScorecard";
 import { MvpPanel } from "@/components/MvpPanel";
+import { isDedicatedSuperOverInnings } from "@/lib/inningsRules";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -315,9 +316,9 @@ export default async function WatchMatchPage({
               <p className="mt-5 text-sm text-white/80">
                 Innings {currentInnings.number} •{" "}
                 <b className="text-white">{battingTeam.shortName}</b> batting
-                {currentInnings.isSuperOver && (
+                {isDedicatedSuperOverInnings(currentInnings) && (
                   <span className="ml-2 rounded-full bg-amber-300 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
-                    Super Over · 2× score
+                    Super over
                   </span>
                 )}
               </p>
@@ -459,7 +460,7 @@ export default async function WatchMatchPage({
                   >
                     <span>
                       <b>Innings {inn.number}</b> · {team.name}
-                      {inn.isSuperOver ? " · Super Over" : ""}
+                      {isDedicatedSuperOverInnings(inn) ? " · Super Over" : ""}
                       {inn.isClosed && (
                         <span className="ml-2 text-xs text-ink-500">closed</span>
                       )}

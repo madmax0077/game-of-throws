@@ -92,6 +92,7 @@ export default async function ScorePage({
           totalBalls: inn.totalBalls,
           isClosed: inn.isClosed,
           isSuperOver: inn.isSuperOver,
+          superOverOneActive: inn.superOverOneActive,
           dismissedBatterIds: dismissalsByInnings[inn.id] ?? [],
           previousOverBowlerId: previousOverBowlerByInnings[inn.id] ?? null,
           bowlerOversCount: bowlerOversByInnings[inn.id] ?? {},

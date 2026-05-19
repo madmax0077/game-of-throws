@@ -63,6 +63,16 @@ export async function POST(
     );
   }
 
+  if (parsed.data.isSuperOver && parsed.data.number < 3) {
+    return NextResponse.json(
+      {
+        error:
+          "Super Over innings must be started from the tie-break screen (innings 3+), not as innings 1 or 2."
+      },
+      { status: 400 }
+    );
+  }
+
   const innings = await prisma.innings.create({
     data: {
       matchId: params.id,

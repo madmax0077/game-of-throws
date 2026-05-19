@@ -148,8 +148,9 @@ model Innings {
   totalRuns     Int      @default(0)
   totalWickets  Int      @default(0)
   totalBalls    Int      @default(0)
-  isClosed      Boolean  @default(false)
-  isSuperOver   Boolean  @default(false) // when true, runs count double in team total but raw in player stats
+  isClosed            Boolean  @default(false)
+  isSuperOver         Boolean  @default(false) // tie-break leg only (innings #3+): 1 over, 2× team runs
+  superOverOneActive  Boolean  @default(false) // regular innings: 2× team runs for the current over only
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -178,8 +179,9 @@ model Ball {
   // The fielder credited with the dismissal — required for CAUGHT/RUN_OUT/STUMPED
   // wicket types, null otherwise. Used to award fielding points in player stats.
   fielderId    String?
-  commentary   String?
-  createdAt    DateTime @default(now())
+  commentary          String?
+  teamRunsMultiplier  Int      @default(1) // 1 or 2 — stored per ball for undo / history
+  createdAt           DateTime @default(now())
 
   innings    Innings @relation(fields: [inningsId], references: [id], onDelete: Cascade)
   striker    Player  @relation("Striker", fields: [strikerId], references: [id])

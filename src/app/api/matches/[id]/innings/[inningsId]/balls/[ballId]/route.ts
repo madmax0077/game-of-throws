@@ -15,11 +15,7 @@ export async function DELETE(
   if (ball.inningsId !== params.inningsId)
     return NextResponse.json({ error: "Mismatched innings" }, { status: 400 });
 
-  const innings = await prisma.innings.findUnique({
-    where: { id: ball.inningsId },
-    select: { isSuperOver: true }
-  });
-  const multiplier = innings?.isSuperOver ? 2 : 1;
+  const multiplier = ball.teamRunsMultiplier ?? 1;
   const totalRevertedRuns = (ball.runs + (ball.extraRuns ?? 0)) * multiplier;
   const wicketDec = ball.isWicket ? 1 : 0;
   const ballDec = ball.legal ? 1 : 0;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { InningsScorecard } from "@/lib/scorecard";
+import { isDedicatedSuperOverInnings } from "@/lib/inningsRules";
 
 type TeamInfo = {
   id: string;
@@ -108,7 +109,10 @@ function InningsBlock({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-display text-base font-bold">
           Innings {inn.inningsNumber}
-          {inn.isSuperOver && (
+          {isDedicatedSuperOverInnings({
+            isSuperOver: inn.isSuperOver,
+            number: inn.inningsNumber
+          }) && (
             <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-800">
               Super over
             </span>
