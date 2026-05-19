@@ -30,16 +30,29 @@ export async function POST(
   });
   if (!match) return NextResponse.json({ error: "Match not found" }, { status: 404 });
 
-  // Each team can bat only once per match. Reject if the requested batting team
-  // already has any innings (open or closed) in this match.
-  const alreadyBatted = match.innings.some(
-    (i) => i.battingTeamId === parsed.data.battingTeamId
+  // Each team can bat only once *per phase*. A "phase" is:
+  //   - innings 1 & 2 -> "regular"   (each team bats once)
+  //   - innings 3 & 4 -> super over leg 1 (each team bats once again)
+  //   - innings 5 & 6 -> super over leg 2 (if leg 1 also tied), and so on.
+  //
+  // The earlier implementation rejected ANY repeat of a batting team across
+  // the whole match, which broke the moment a super over had to start after
+  // a tied regular match ("This team has already batted in this match...").
+  const phaseOf = (n: number): string =>
+    n <= 2 ? "regular" : `super-over-${Math.floor((n - 3) / 2) + 1}`;
+  const requestedPhase = phaseOf(parsed.data.number);
+  const alreadyBattedInPhase = match.innings.some(
+    (i) =>
+      phaseOf(i.number) === requestedPhase &&
+      i.battingTeamId === parsed.data.battingTeamId
   );
-  if (alreadyBatted) {
+  if (alreadyBattedInPhase) {
     return NextResponse.json(
       {
         error:
-          "This team has already batted in this match. Only the other team can bat next."
+          requestedPhase === "regular"
+            ? "This team has already batted in this match. Only the other team can bat next."
+            : "This team has already batted in this super over. The other team must bat now."
       },
       { status: 409 }
     );

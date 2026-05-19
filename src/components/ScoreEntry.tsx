@@ -635,7 +635,13 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
 
   const [strikerId, setStrikerId] = useState<string>(battingTeam.players[0]?.id ?? "");
   const [nonStrikerId, setNonStrikerId] = useState<string>(battingTeam.players[1]?.id ?? "");
-  const [bowlerId, setBowlerId] = useState<string>(bowlingTeam.players[0]?.id ?? "");
+  // Bowler is intentionally NOT auto-defaulted to players[0]. We want the
+  // captain (a.k.a. scorer) to actively pick a bowler before the first ball
+  // of every over — including the very first ball of the innings — otherwise
+  // the wicket / runs would be silently credited to whoever happened to be
+  // first in the squad. setBowlerId("") is also called at the end of every
+  // over, so the empty-bowler gate covers both cases uniformly.
+  const [bowlerId, setBowlerId] = useState<string>("");
   const [extraType, setExtraType] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [overEndedBanner, setOverEndedBanner] = useState<{ overNumber: number } | null>(null);
@@ -664,6 +670,11 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
   // True when we're between overs: an over just completed and the next has
   // not yet started. The previous over's bowler cannot bowl again here.
   const atOverBoundary = innings.totalBalls > 0 && innings.totalBalls % 6 === 0;
+
+  // Bowler is required before any ball can be recorded — both at the very
+  // first ball of an innings (we now start with bowlerId = "") and at the
+  // start of every subsequent over (postBall clears bowlerId on over-end).
+  const bowlerMissing = !bowlerId;
 
   const dedicatedSuperOver = isDedicatedSuperOverInnings(innings);
   const canEnableSuperOverOne =
@@ -1161,6 +1172,7 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
             onClick={confirmWicket}
             disabled={
               busy ||
+              bowlerMissing ||
               (availableNewBatters.length > 0 && !newBatterId) ||
               (fielderRequired && !fielderId)
             }
@@ -1180,15 +1192,38 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
         </section>
       ) : (
         <section className="card p-5">
+          {bowlerMissing && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                className="mt-0.5 shrink-0"
+              >
+                <path
+                  d="M12 8v5m0 3v.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>
+                <b>Pick a bowler</b> from the selector above before recording
+                this ball — runs and wickets need to be credited to a bowler.
+              </span>
+            </div>
+          )}
           <p className="label">Runs off this ball</p>
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
             {[0, 1, 2, 3, 4, 5, 6].map((n) => (
               <button
                 key={n}
                 type="button"
-                disabled={busy}
+                disabled={busy || bowlerMissing}
                 onClick={() => recordRuns(n)}
-                className={`h-14 rounded-xl text-lg font-bold transition ${
+                className={`h-14 rounded-xl text-lg font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   n === 4
                     ? "bg-amber-300 text-ink-900 hover:bg-amber-400"
                     : n === 6
@@ -1204,9 +1239,9 @@ function BallByBall({ match, innings }: { match: Match; innings: Innings }) {
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || bowlerMissing}
               onClick={() => setWicketMode(true)}
-              className="btn bg-ink-900 text-white hover:bg-ink-800 h-12"
+              className="btn bg-ink-900 text-white hover:bg-ink-800 h-12 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Wicket
             </button>
