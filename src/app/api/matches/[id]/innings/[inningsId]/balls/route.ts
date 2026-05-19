@@ -93,9 +93,6 @@ export async function POST(
   }
 
   const scoreMultiplier = ballTeamRunsMultiplier(innings);
-  const rawRuns = data.runs + (data.extraRuns ?? 0);
-  const totalAddedRuns = rawRuns * scoreMultiplier;
-  const wicketIncrement = data.isWicket ? 1 : 0;
   const ballIncrement = data.legal ? 1 : 0;
   const overEndsAfterThisBall =
     data.legal && ballIncrement > 0 && (legalBallsBefore + ballIncrement) % 6 === 0;
@@ -105,39 +102,72 @@ export async function POST(
     where: { teamId: innings.battingTeamId }
   });
 
-  const [ball, updatedInnings] = await prisma.$transaction([
-    prisma.ball.create({
-      data: {
-        inningsId: innings.id,
-        overNumber,
-        ballInOver,
-        legal: data.legal,
-        runs: data.runs,
-        extraType: data.extraType ?? null,
-        extraRuns: data.extraRuns ?? 0,
-        isWicket: data.isWicket,
-        wicketType: data.wicketType ?? null,
-        strikerId: data.strikerId,
-        nonStrikerId: data.nonStrikerId,
-        bowlerId: data.bowlerId,
-        outBatterId: data.outBatterId ?? null,
-        fielderId: data.fielderId ?? null,
-        commentary: data.commentary ?? null,
-        teamRunsMultiplier: scoreMultiplier
-      }
-    }),
-    prisma.innings.update({
-      where: { id: innings.id },
-      data: {
-        totalRuns: { increment: totalAddedRuns },
-        totalWickets: { increment: wicketIncrement },
-        totalBalls: { increment: ballIncrement },
-        ...(overEndsAfterThisBall && innings.superOverOneActive
-          ? { superOverOneActive: false }
-          : {})
-      }
-    })
-  ]);
+  // 1) Insert the ball with the multiplier that applies RIGHT NOW.
+  const ball = await prisma.ball.create({
+    data: {
+      inningsId: innings.id,
+      overNumber,
+      ballInOver,
+      legal: data.legal,
+      runs: data.runs,
+      extraType: data.extraType ?? null,
+      extraRuns: data.extraRuns ?? 0,
+      isWicket: data.isWicket,
+      wicketType: data.wicketType ?? null,
+      strikerId: data.strikerId,
+      nonStrikerId: data.nonStrikerId,
+      bowlerId: data.bowlerId,
+      outBatterId: data.outBatterId ?? null,
+      fielderId: data.fielderId ?? null,
+      commentary: data.commentary ?? null,
+      teamRunsMultiplier: scoreMultiplier
+    }
+  });
+
+  // 2) RECOMPUTE the innings running totals from every ball using the
+  //    CURRENT rule. This is self-healing: if older balls were recorded
+  //    with a stale multiplier (e.g. the tie-break Super Over used to
+  //    double runs, but that was fixed), the next ball recorded snaps
+  //    the totals to the correct values instead of carrying forward the
+  //    inflated cumulative `increment` from before.
+  //
+  //    Rule:
+  //      - Dedicated super-over innings (#3+): every ball counts 1x,
+  //        ignoring whatever multiplier was stored on the ball.
+  //      - Regular innings (1, 2): trust the per-ball stored multiplier,
+  //        so the "Super Over 1" toggle's historical 2x over is kept.
+  const allBalls = await prisma.ball.findMany({
+    where: { inningsId: innings.id },
+    select: {
+      runs: true,
+      extraRuns: true,
+      isWicket: true,
+      legal: true,
+      teamRunsMultiplier: true
+    }
+  });
+  const dedicatedSO = isDedicatedSuperOverInnings(innings);
+  let recomputedRuns = 0;
+  let recomputedWickets = 0;
+  let recomputedBalls = 0;
+  for (const b of allBalls) {
+    const m = dedicatedSO ? 1 : b.teamRunsMultiplier ?? 1;
+    recomputedRuns += (b.runs + (b.extraRuns ?? 0)) * m;
+    if (b.legal) recomputedBalls += 1;
+    if (b.isWicket) recomputedWickets += 1;
+  }
+
+  const updatedInnings = await prisma.innings.update({
+    where: { id: innings.id },
+    data: {
+      totalRuns: recomputedRuns,
+      totalWickets: recomputedWickets,
+      totalBalls: recomputedBalls,
+      ...(overEndsAfterThisBall && innings.superOverOneActive
+        ? { superOverOneActive: false }
+        : {})
+    }
+  });
 
   // What total does the current innings need to overhaul to "reach the
   // target"? For a regular 2nd innings it's the regular 1st innings total.
