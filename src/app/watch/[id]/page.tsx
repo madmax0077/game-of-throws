@@ -15,6 +15,8 @@ import { Logo } from "@/components/Logo";
 import { LiveAutoRefresh } from "@/components/LiveAutoRefresh";
 import { MatchScorecard } from "@/components/MatchScorecard";
 import { MvpPanel } from "@/components/MvpPanel";
+import { MatchCommentary } from "@/components/MatchCommentary";
+import { buildInningsCommentary } from "@/lib/commentary";
 import { isDedicatedSuperOverInnings } from "@/lib/inningsRules";
 
 export const dynamic = "force-dynamic";
@@ -135,6 +137,49 @@ export default async function WatchMatchPage({
         bowlingPlayers
       )
     };
+  });
+
+  // Cricinfo-style commentary blocks (one per innings, latest over on top).
+  const nameById = new Map<string, string>();
+  for (const p of match.homeTeam.players) nameById.set(p.id, p.name);
+  for (const p of match.awayTeam.players) nameById.set(p.id, p.name);
+  const nameFor = (id: string): string => nameById.get(id) ?? "Unknown";
+
+  const inningsForCommentary = match.innings.map((inn) => {
+    let target: number | null = null;
+    if (inn.number === 2) {
+      const first = match.innings.find((i) => i.number === 1);
+      target = first ? first.totalRuns + 1 : null;
+    } else if (inn.number >= 4 && inn.number % 2 === 0) {
+      const prevLeg = match.innings.find((i) => i.number === inn.number - 1);
+      target = prevLeg ? prevLeg.totalRuns + 1 : null;
+    }
+    const inningsOversLimit = isDedicatedSuperOverInnings(inn) ? 1 : match.overs;
+    return buildInningsCommentary({
+      inningsNumber: inn.number,
+      isSuperOver: inn.isSuperOver,
+      battingTeamId: inn.battingTeamId,
+      bowlingTeamId: inn.bowlingTeamId,
+      inningsOversLimit,
+      target,
+      balls: inn.balls.map((b) => ({
+        id: b.id,
+        runs: b.runs,
+        extraType: b.extraType,
+        extraRuns: b.extraRuns ?? 0,
+        isWicket: b.isWicket,
+        wicketType: b.wicketType,
+        legal: b.legal,
+        overNumber: b.overNumber,
+        ballInOver: b.ballInOver,
+        bowlerId: b.bowlerId,
+        strikerId: b.strikerId,
+        nonStrikerId: b.nonStrikerId,
+        outBatterId: b.outBatterId,
+        fielderId: b.fielderId
+      })),
+      nameFor
+    });
   });
 
   const allBallsForPoints: ScorecardBall[] = match.innings.flatMap((inn) =>
@@ -424,6 +469,21 @@ export default async function WatchMatchPage({
             innings={inningsForCard}
           />
         )}
+
+        {/* Ball-by-ball commentary, latest over on top */}
+        <MatchCommentary
+          homeTeam={{
+            id: match.homeTeamId,
+            name: match.homeTeam.name,
+            shortName: match.homeTeam.shortName
+          }}
+          awayTeam={{
+            id: match.awayTeamId,
+            name: match.awayTeam.name,
+            shortName: match.awayTeam.shortName
+          }}
+          innings={inningsForCommentary}
+        />
 
         {/* MVP + per-player points (visible after the match completes) */}
         {isCompleted && (
