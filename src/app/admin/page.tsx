@@ -11,6 +11,7 @@ import {
 import { AdminApprovalActions } from "@/components/admin/AdminApprovalActions";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { AdminSignOutButton } from "@/components/admin/AdminSignOutButton";
+import { AdminDeleteButton } from "@/components/admin/AdminDeleteButton";
 import { DeleteTournamentButton } from "@/components/admin/DeleteTournamentButton";
 
 export const dynamic = "force-dynamic";
@@ -110,13 +111,12 @@ export default async function AdminPage() {
               Admin
             </span>
             <h1 className="font-display text-2xl font-bold sm:text-3xl">
-              Tournament approvals
+              Admin dashboard
             </h1>
           </div>
           <p className="mt-1 text-ink-600">
-            Organizer-submitted tournaments stay hidden from the public until
-            you approve them here. You can also see recently approved or
-            rejected entries for context.
+            Approve tournaments, and permanently delete tournaments, matches, or
+            players when needed.
           </p>
           <p className="mt-1 text-xs text-ink-500">
             Signed in as{" "}
@@ -248,7 +248,187 @@ export default async function AdminPage() {
       </div>
 
       <AllTournamentsSection />
+      <AllMatchesSection />
+      <AllPlayersSection />
     </div>
+  );
+}
+
+function playerHasScoringData(counts: {
+  ballsAsStriker: number;
+  ballsAsNonStriker: number;
+  ballsAsBowler: number;
+  ballsAsOutBatter: number;
+  ballsAsFielder: number;
+}): boolean {
+  return (
+    counts.ballsAsStriker +
+      counts.ballsAsNonStriker +
+      counts.ballsAsBowler +
+      counts.ballsAsOutBatter +
+      counts.ballsAsFielder >
+    0
+  );
+}
+
+async function AllMatchesSection() {
+  const matches = await prisma.match.findMany({
+    orderBy: { scheduledAt: "desc" },
+    take: 100,
+    include: {
+      tournament: { select: { id: true, name: true } },
+      homeTeam: { select: { shortName: true, name: true } },
+      awayTeam: { select: { shortName: true, name: true } }
+    }
+  });
+
+  return (
+    <section className="card overflow-hidden p-0">
+      <header className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
+        <div>
+          <h2 className="font-display text-lg font-bold">All matches</h2>
+          <p className="mt-0.5 text-xs text-ink-500">
+            Deletes the match and all innings / ball-by-ball data. Teams are
+            not removed.
+          </p>
+        </div>
+        <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+          {matches.length} shown
+        </span>
+      </header>
+      {matches.length === 0 ? (
+        <p className="px-5 py-6 text-center text-sm text-ink-500">
+          No matches yet.
+        </p>
+      ) : (
+        <ul className="divide-y divide-ink-100">
+          {matches.map((m) => (
+            <li
+              key={m.id}
+              className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/matches/${m.id}`}
+                    className="truncate text-sm font-semibold text-ink-900 hover:text-brand-700"
+                  >
+                    {m.homeTeam.shortName} vs {m.awayTeam.shortName}
+                  </Link>
+                  <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-700">
+                    {m.status}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-ink-500">
+                  <Link
+                    href={`/tournaments/${m.tournament.id}`}
+                    className="hover:text-brand-700"
+                  >
+                    {m.tournament.name}
+                  </Link>
+                  {" · "}
+                  {m.venue} · {formatDate(m.scheduledAt)} · {m.overs} overs
+                </p>
+              </div>
+              <AdminDeleteButton
+                deleteUrl={`/api/admin/matches/${m.id}`}
+                itemName={`${m.homeTeam.shortName} vs ${m.awayTeam.shortName}`}
+                size="sm"
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+async function AllPlayersSection() {
+  const players = await prisma.player.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    include: {
+      team: { select: { shortName: true, name: true } },
+      _count: {
+        select: {
+          ballsAsStriker: true,
+          ballsAsNonStriker: true,
+          ballsAsBowler: true,
+          ballsAsOutBatter: true,
+          ballsAsFielder: true
+        }
+      }
+    }
+  });
+
+  return (
+    <section className="card overflow-hidden p-0">
+      <header className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
+        <div>
+          <h2 className="font-display text-lg font-bold">All players</h2>
+          <p className="mt-0.5 text-xs text-ink-500">
+            Only players with no scoring history can be deleted. Others must be
+            renamed from the team page.
+          </p>
+        </div>
+        <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+          {players.length} shown
+        </span>
+      </header>
+      {players.length === 0 ? (
+        <p className="px-5 py-6 text-center text-sm text-ink-500">
+          No players yet.
+        </p>
+      ) : (
+        <ul className="divide-y divide-ink-100">
+          {players.map((p) => {
+            const hasScoring = playerHasScoringData(p._count);
+            return (
+              <li
+                key={p.id}
+                className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/players/${p.id}`}
+                      className="truncate text-sm font-semibold text-ink-900 hover:text-brand-700"
+                    >
+                      {p.name}
+                    </Link>
+                    <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-700">
+                      {p.role}
+                    </span>
+                    {p.isCaptain && (
+                      <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-800">
+                        Captain
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-ink-500">
+                    {p.team
+                      ? `${p.team.name} (${p.team.shortName})`
+                      : "No team"}
+                    {p.jerseyNo != null ? ` · #${p.jerseyNo}` : ""}
+                  </p>
+                </div>
+                <AdminDeleteButton
+                  deleteUrl={`/api/admin/players/${p.id}`}
+                  itemName={p.name}
+                  size="sm"
+                  disabled={hasScoring}
+                  disabledReason={
+                    hasScoring
+                      ? "Has ball-by-ball records"
+                      : undefined
+                  }
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
